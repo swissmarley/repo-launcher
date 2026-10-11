@@ -47,6 +47,8 @@ export function ConsoleWindow({ projectId }: { projectId: string }) {
       cursorBlink: true,
       convertEol: false,
       scrollback: 5000,
+      // Each run starts by clearing the screen; keep the previous run's output above it.
+      scrollOnEraseInDisplay: true,
       theme: { background: cssVar('--surface-sunken'), foreground: cssVar('--fg'), cursor: cssVar('--accent') },
     })
     const fit = new FitAddon()
@@ -82,7 +84,6 @@ export function ConsoleWindow({ projectId }: { projectId: string }) {
   const runAgain = async (e?: FormEvent) => {
     e?.preventDefault()
     setProblem(null)
-    term.current?.write('\r\n')
     try {
       setStatus('running')
       await api.launchProject(projectId, options)
