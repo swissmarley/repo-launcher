@@ -135,7 +135,7 @@ pub async fn sync(list: &Path, out: &Path) -> Result<(), Problem> {
             return Err(Problem::internal("corpus entries must be GitHub links"));
         };
         let subdir = match &r.tree {
-            Some(_) => github.resolve_ref(&r).await?.subdir,
+            Some(_) => github.resolve_ref(&r, None).await?.subdir,
             None => None,
         };
         let tmp = tempfile::tempdir()?;

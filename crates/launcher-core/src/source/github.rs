@@ -1,5 +1,7 @@
 //! Talks to GitHub. Anonymous use is the default, so only `metadata` touches the rate-limited
 //! REST API (60 calls/hour/IP). Ref resolution and archive downloads use quota-free endpoints.
+//!
+//! A token is passed only for private repositories; public ones never send it (D-002).
 
 use crate::problem::{FixAction, Problem, ProblemCode, Result};
 use crate::source::url::RepoRef;
@@ -62,15 +64,25 @@ impl GitHub {
         }
     }
 
-    pub async fn metadata(&self, r: &RepoRef) -> Result<RepoMeta> {
+    pub fn api_base(&self) -> &str {
+        &self.api_base
+    }
+
+    pub fn web_base(&self) -> &str {
+        &self.web_base
+    }
+
+    pub async fn metadata(&self, r: &RepoRef, token: Option<&str>) -> Result<RepoMeta> {
         let url = format!("{}/repos/{}/{}", self.api_base, r.owner, r.repo);
-        let resp = self
+        let mut req = self
             .http
             .get(&url)
             .header("Accept", "application/vnd.github+json")
-            .header("X-GitHub-Api-Version", "2022-11-28")
-            .send()
-            .await?;
+            .header("X-GitHub-Api-Version", "2022-11-28");
+        if let Some(t) = token {
+            req = req.bearer_auth(t);
+        }
+        let resp = req.send().await?;
         match resp.status().as_u16() {
             200 => Ok(resp.json().await?),
             404 | 451 => Err(not_found(r)),
@@ -82,12 +94,36 @@ impl GitHub {
     }
 
     /// Lists refs through Git's public smart-HTTP endpoint (no API quota, no git binary).
-    pub async fn resolve_ref(&self, r: &RepoRef) -> Result<ResolvedRef> {
+    /// Account creation date, for "this account is brand new" warnings. One anonymous API call.
+    pub async fn owner_created_at(&self, owner: &str) -> Result<Option<String>> {
+        #[derive(Deserialize)]
+        struct User {
+            created_at: Option<String>,
+        }
+        let url = format!("{}/users/{owner}", self.api_base);
+        let resp = self
+            .http
+            .get(&url)
+            .header("Accept", "application/vnd.github+json")
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            return Ok(None);
+        }
+        Ok(resp.json::<User>().await?.created_at)
+    }
+
+    /// With a token, Git's endpoint takes it as the password for user `x-access-token`.
+    pub async fn resolve_ref(&self, r: &RepoRef, token: Option<&str>) -> Result<ResolvedRef> {
         let url = format!(
             "{}/{}/{}.git/info/refs?service=git-upload-pack",
             self.web_base, r.owner, r.repo
         );
-        let resp = self.http.get(&url).send().await?;
+        let mut req = self.http.get(&url);
+        if let Some(t) = token {
+            req = req.basic_auth("x-access-token", Some(t));
+        }
+        let resp = req.send().await?;
         match resp.status().as_u16() {
             200 => {}
             401 | 403 | 404 => return Err(not_found(r)),
@@ -101,6 +137,14 @@ impl GitHub {
         let refs = parse_ref_advertisement(&body);
         pick_ref(&refs, r.tree.as_deref())
             .ok_or_else(|| not_found(r).detail(format!("ref {:?} not found", r.tree)))
+    }
+
+    /// Private repositories download through the API, which redirects to a short-lived link.
+    pub fn api_tarball_url(&self, r: &RepoRef, commit: &str) -> String {
+        format!(
+            "{}/repos/{}/{}/tarball/{}",
+            self.api_base, r.owner, r.repo, commit
+        )
     }
 
     pub fn archive_url(&self, r: &RepoRef, commit: &str) -> String {

@@ -19,6 +19,14 @@ async fn go_cli_builds_and_runs() {
         .add(&std::fs::canonicalize(fixture).unwrap().to_string_lossy())
         .await
         .unwrap();
+    // The safety gate: review what will happen, then agree to it.
+    let report = engine
+        .review(&project.id, null_sink(), CancellationToken::new())
+        .await
+        .unwrap_or_else(|p| panic!("review failed: {p}"));
+    engine
+        .consent(&project.id, &report.fingerprint, false)
+        .unwrap();
     let installed = engine
         .install(&project.id, null_sink(), CancellationToken::new())
         .await

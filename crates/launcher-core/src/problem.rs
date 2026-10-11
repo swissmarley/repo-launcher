@@ -29,6 +29,30 @@ pub enum ProblemCode {
     StartTimeout,
     Cancelled,
     ProjectNotFound,
+    /// No usable keychain (e.g. a Linux desktop without a Secret Service).
+    KeychainUnavailable,
+    /// Longer than the 2560 bytes Windows allows for one saved secret.
+    SecretTooLarge,
+    /// This build has no GitHub App client ID configured.
+    GithubNotConfigured,
+    /// The sign-in code expired before it was entered.
+    SignInExpired,
+    /// The user declined on GitHub.
+    SignInDenied,
+    /// The saved GitHub sign-in no longer works (expired or revoked).
+    SignedOut,
+    /// Signed in, but GitHub still says not found: missing, or not shared with Repo Launcher.
+    RepoNotShared,
+    /// The project needs settings (API keys) the user hasn't entered.
+    MissingKeys,
+    /// The install or run plan changed (or was never approved); the user must review it.
+    ConsentRequired,
+    AiNotEnabled,
+    AiKeyMissing,
+    /// The AI service refused or failed (bad key, quota, network).
+    AiFailed,
+    /// The AI suggestion didn't pass the launcher.json validator.
+    AiInvalidRecipe,
     Internal,
 }
 
@@ -48,6 +72,15 @@ pub enum FixAction {
     OpenUrl {
         url: String,
     },
+    ConnectGithub,
+    /// Let Repo Launcher see more repositories (GitHub App installation page).
+    ChooseRepositories {
+        url: String,
+    },
+    EnterKeys,
+    ReviewSafety,
+    AskAi,
+    OpenSettings,
 }
 
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
@@ -81,8 +114,9 @@ impl Problem {
         self
     }
 
+    /// Technical detail; secrets and token-like strings are removed here, at the source.
     pub fn detail(mut self, detail: impl fmt::Display) -> Self {
-        self.detail = Some(detail.to_string());
+        self.detail = Some(crate::redact::scrub_owned(detail.to_string()));
         self
     }
 

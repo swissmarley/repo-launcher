@@ -1,4 +1,5 @@
 pub mod archive;
+pub mod auth;
 pub mod github;
 pub mod sync;
 pub mod url;

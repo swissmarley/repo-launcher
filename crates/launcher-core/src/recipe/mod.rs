@@ -1,6 +1,7 @@
 //! A recipe is the normalized "how to install and run this project". Heuristics produce one
 //! today; `launcher.json` and AI proposals will produce the same structure.
 
+pub mod keys;
 pub mod manifest;
 mod node;
 mod python;
@@ -26,6 +27,8 @@ pub enum AppKind {
 pub enum RecipeSource {
     Manifest,
     Heuristic,
+    /// Suggested by an AI model (opt-in); always shown as a red risk signal.
+    Ai,
 }
 
 /// Plain-language identity of a step; the UI turns it into words.
@@ -164,10 +167,14 @@ fn yes() -> bool {
 }
 
 impl Recipe {
-    /// Stable hash used to decide whether consent must be asked again.
+    /// Stable hash of what will be installed and run, used to decide whether consent must be
+    /// asked again. The list of settings the project asks for is left out: a new optional key
+    /// doesn't change what runs on the computer.
     pub fn fingerprint(&self) -> String {
         use sha2::{Digest, Sha256};
-        let json = serde_json::to_vec(self).unwrap_or_default();
+        let mut copy = self.clone();
+        copy.env_vars.clear();
+        let json = serde_json::to_vec(&copy).unwrap_or_default();
         hex::encode(Sha256::digest(json))
     }
 }
@@ -177,10 +184,30 @@ pub fn resolve(
     tree: &crate::detect::FileTree,
     report: &DetectionReport,
 ) -> Result<(Recipe, Option<manifest::Display>), Problem> {
-    match tree.read(manifest::FILE_NAME) {
-        Some(text) => manifest::parse(&text, report).map(|(r, d)| (r, Some(d))),
-        None => from_detection(report).map(|r| (r, None)),
+    let (mut recipe, display) = match tree.read(manifest::FILE_NAME) {
+        Some(text) => manifest::parse(&text, report).map(|(r, d)| (r, Some(d)))?,
+        None => (from_detection(report)?, None),
+    };
+    if recipe.env_vars.is_empty() {
+        recipe.env_vars = env_from_hints(report);
     }
+    Ok((recipe, display))
+}
+
+/// Settings found by heuristics. A launcher.json that lists its own settings replaces these.
+pub fn env_from_hints(report: &DetectionReport) -> Vec<EnvVarSpec> {
+    report
+        .env_hints
+        .iter()
+        .map(|h| EnvVarSpec {
+            name: h.name.clone(),
+            label: None,
+            description: None,
+            required: h.required,
+            secret: h.secret,
+            help_url: None,
+        })
+        .collect()
 }
 
 /// Builds a recipe from heuristics. When a repo has both Python and Node, the one with a

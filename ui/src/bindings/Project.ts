@@ -6,4 +6,16 @@ export type Project = { id: string,
 /**
  * `github:owner/repo` or `local:/absolute/path`.
  */
-source: string, name: string, description: string | null, owner: string | null, repo: string | null, refName: string | null, commit: string | null, subdir: string | null, stars: number | null, license: string | null, avatarUrl: string | null, status: ProjectStatus, kind: AppKind | null, createdAt: number, updatedAt: number, };
+source: string, name: string, description: string | null, owner: string | null, repo: string | null, refName: string | null, commit: string | null, subdir: string | null, stars: number | null, license: string | null, avatarUrl: string | null, 
+/**
+ * Private on GitHub: downloads need the user's GitHub sign-in.
+ */
+isPrivate: boolean, archived: boolean, 
+/**
+ * ISO dates from GitHub, used for "very new project" warnings.
+ */
+repoCreatedAt: string | null, ownerCreatedAt: string | null, 
+/**
+ * The user has seen the keys form for this project once.
+ */
+keysReviewed: boolean, status: ProjectStatus, kind: AppKind | null, createdAt: number, updatedAt: number, };

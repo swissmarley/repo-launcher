@@ -403,6 +403,7 @@ mod tests {
             node: None,
             go: None,
             compose_file: None,
+            env_hints: vec![],
         }
     }
 

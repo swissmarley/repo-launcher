@@ -15,9 +15,15 @@ const USAGE: &str = "usage:
   rl add <github-link | ./local/folder>
   rl list
   rl detect <folder>
-  rl install <id>
+  rl review <id>            download and show what installing would do
+  rl install <id> [--yes]   --yes: agree to the plan shown by review
   rl run <id> [--smoke]     --smoke: start, check it responds, stop
+  rl keys <id>              list the settings a project asks for
+  rl set-key <id> <NAME>    read a value from stdin into the keychain (empty clears it)
   rl uninstall <id>
+  rl github status|login|logout|repos
+  rl config github-app <client-id> [app-slug]
+  rl forget-secrets         delete every keychain entry Repo Launcher made
   rl corpus-sync <corpus.toml> <out-dir>   (development: refresh test snapshots)";
 
 #[tokio::main]
@@ -72,6 +78,15 @@ async fn run(args: &[String]) -> Result<ExitCode, Problem> {
                 println!("{}  {:<28} {:?}  {}", p.id, p.name, p.status, p.source);
             }
         }
+        (Some("review"), Some(id)) => {
+            let report = engine
+                .review(id, printer(), CancellationToken::new())
+                .await?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&report).unwrap_or_default()
+            );
+        }
         (Some("install"), Some(id)) => {
             let cancel = CancellationToken::new();
             let c = cancel.clone();
@@ -80,8 +95,55 @@ async fn run(args: &[String]) -> Result<ExitCode, Problem> {
                     c.cancel();
                 }
             });
+            let report = engine.review(id, printer(), cancel.clone()).await?;
+            if !report.consented {
+                for s in &report.signals {
+                    eprintln!("[{:?}] {:?} {:?}", s.level, s.code, s.params);
+                }
+                for c in &report.commands {
+                    eprintln!("  will run: {c}");
+                }
+                if !args.iter().any(|a| a == "--yes") {
+                    eprintln!("review the plan above, then run again with --yes to agree");
+                    return Ok(ExitCode::FAILURE);
+                }
+                engine.consent(id, &report.fingerprint, false)?;
+            }
             let p = engine.install(id, printer(), cancel).await?;
             println!("installed: {} ({:?})", p.name, p.kind);
+        }
+        (Some("keys"), Some(id)) => {
+            for v in engine.env_vars(id)? {
+                let state = match (&v.value, v.has_value) {
+                    (Some(value), _) => value.clone(),
+                    (None, true) => "(saved in keychain)".into(),
+                    (None, false) => "(not set)".into(),
+                };
+                let need = if v.required { "required" } else { "optional" };
+                println!(
+                    "{:<28} {need:<9} {state}  {}",
+                    v.name,
+                    v.help_url.unwrap_or_default()
+                );
+            }
+        }
+        (Some("set-key"), Some(id)) => {
+            let name = arg(2).ok_or_else(usage)?;
+            let mut value = String::new();
+            std::io::stdin().read_line(&mut value)?;
+            let value = value.trim();
+            engine.set_env_value(id, name, (!value.is_empty()).then_some(value))?;
+            println!("saved {name}");
+        }
+        (Some("github"), Some(cmd)) => return github(&engine, cmd).await,
+        (Some("config"), Some("github-app")) => {
+            let client_id = arg(2).ok_or_else(usage)?;
+            engine.set_github_app(Some(client_id), arg(3))?;
+            println!("GitHub App client ID saved");
+        }
+        (Some("forget-secrets"), None) => {
+            let n = engine.forget_all_secrets()?;
+            println!("deleted {n} keychain entries");
         }
         (Some("run"), Some(id)) => {
             return run_project(&engine, id, arg(2) == Some("--smoke")).await;
@@ -89,6 +151,38 @@ async fn run(args: &[String]) -> Result<ExitCode, Problem> {
         (Some("uninstall"), Some(id)) => {
             engine.uninstall(id).await?;
             println!("removed {id}");
+        }
+        _ => return Err(usage()),
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+async fn github(engine: &Engine, cmd: &str) -> Result<ExitCode, Problem> {
+    match cmd {
+        "status" => match engine.github_account() {
+            Some(a) => println!("connected as @{}", a.login),
+            None => println!("not connected"),
+        },
+        "login" => {
+            let code = engine.github_begin_sign_in().await?;
+            println!(
+                "Open {} and enter the code {}",
+                code.verification_uri, code.user_code
+            );
+            let account = engine
+                .github_finish_sign_in(CancellationToken::new())
+                .await?;
+            println!("connected as @{}", account.login);
+        }
+        "logout" => {
+            let url = engine.github_sign_out()?;
+            println!("signed out; to revoke access entirely, visit {url}");
+        }
+        "repos" => {
+            for r in engine.github_repositories().await? {
+                let vis = if r.private { "private" } else { "public" };
+                println!("{:<40} {vis}", r.full_name);
+            }
         }
         _ => return Err(usage()),
     }

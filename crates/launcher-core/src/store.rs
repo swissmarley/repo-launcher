@@ -5,10 +5,12 @@ use crate::problem::{Problem, ProblemCode, Result};
 use crate::recipe::{AppKind, Recipe};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Mutex;
 
-const MIGRATIONS: &[&str] = &[r#"
+const MIGRATIONS: &[&str] = &[
+    r#"
 CREATE TABLE projects (
     id            TEXT PRIMARY KEY,
     source        TEXT NOT NULL,
@@ -28,7 +30,38 @@ CREATE TABLE projects (
     updated_at    INTEGER NOT NULL
 );
 CREATE UNIQUE INDEX projects_source ON projects(source);
-"#];
+"#,
+    r#"
+ALTER TABLE projects ADD COLUMN is_private INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE projects ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE projects ADD COLUMN repo_created_at TEXT;
+ALTER TABLE projects ADD COLUMN owner_created_at TEXT;
+ALTER TABLE projects ADD COLUMN consented_fingerprint TEXT;
+ALTER TABLE projects ADD COLUMN consented_at INTEGER;
+ALTER TABLE projects ADD COLUMN keys_reviewed INTEGER NOT NULL DEFAULT 0;
+-- Index of keychain entries we created; the keychain itself is never enumerated.
+CREATE TABLE secret_keys (
+    key         TEXT PRIMARY KEY,
+    project_id  TEXT,
+    created_at  INTEGER NOT NULL
+);
+-- Values of settings a project marks as not secret. Secret values live in the keychain.
+CREATE TABLE env_values (
+    project_id  TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    value       TEXT NOT NULL,
+    PRIMARY KEY (project_id, name)
+);
+CREATE TABLE trusted_publishers (
+    owner       TEXT PRIMARY KEY,
+    added_at    INTEGER NOT NULL
+);
+CREATE TABLE settings (
+    key         TEXT PRIMARY KEY,
+    value       TEXT NOT NULL
+);
+"#,
+];
 
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -77,6 +110,17 @@ pub struct Project {
     pub stars: Option<u64>,
     pub license: Option<String>,
     pub avatar_url: Option<String>,
+    /// Private on GitHub: downloads need the user's GitHub sign-in.
+    pub is_private: bool,
+    pub archived: bool,
+    /// ISO dates from GitHub, used for "very new project" warnings.
+    pub repo_created_at: Option<String>,
+    pub owner_created_at: Option<String>,
+    /// The recipe fingerprint the user agreed to install and run.
+    #[serde(skip)]
+    pub consented_fingerprint: Option<String>,
+    /// The user has seen the keys form for this project once.
+    pub keys_reviewed: bool,
     pub status: ProjectStatus,
     pub kind: Option<AppKind>,
     #[serde(skip)]
@@ -136,12 +180,14 @@ impl Store {
             .map_err(Problem::internal)?;
         self.conn().execute(
             "INSERT INTO projects (id, source, name, description, owner, repo, ref_name, commit_sha,
-                subdir, stars, license, avatar_url, status, recipe_json, created_at, updated_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)",
+                subdir, stars, license, avatar_url, status, recipe_json, created_at, updated_at,
+                is_private, archived, repo_created_at, owner_created_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20)",
             params![
                 p.id, p.source, p.name, p.description, p.owner, p.repo, p.ref_name, p.commit,
                 p.subdir, p.stars.map(|s| s as i64), p.license, p.avatar_url, p.status.as_str(),
-                recipe, p.created_at, p.updated_at
+                recipe, p.created_at, p.updated_at, p.is_private, p.archived, p.repo_created_at,
+                p.owner_created_at
             ],
         )?;
         Ok(())
@@ -214,10 +260,164 @@ impl Store {
         Ok(())
     }
 
-    pub fn delete(&self, id: &str) -> Result<()> {
-        self.conn()
-            .execute("DELETE FROM projects WHERE id = ?1", [id])?;
+    pub fn set_consent(&self, id: &str, fingerprint: Option<&str>) -> Result<()> {
+        self.conn().execute(
+            "UPDATE projects SET consented_fingerprint = ?2, consented_at = ?3 WHERE id = ?1",
+            params![id, fingerprint, fingerprint.map(|_| now())],
+        )?;
         Ok(())
+    }
+
+    pub fn set_keys_reviewed(&self, id: &str) -> Result<()> {
+        self.conn()
+            .execute("UPDATE projects SET keys_reviewed = 1 WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
+    pub fn set_owner_created_at(&self, id: &str, created: &str) -> Result<()> {
+        self.conn().execute(
+            "UPDATE projects SET owner_created_at = ?2 WHERE id = ?1",
+            params![id, created],
+        )?;
+        Ok(())
+    }
+
+    /// Removes the project and its plain settings. Its keychain entries are deleted by the
+    /// caller first (see `secrets::Vault::delete_project`).
+    pub fn delete(&self, id: &str) -> Result<()> {
+        let conn = self.conn();
+        conn.execute("DELETE FROM env_values WHERE project_id = ?1", [id])?;
+        conn.execute("DELETE FROM projects WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
+    // --- keychain index -------------------------------------------------------------------
+
+    pub fn index_secret(&self, key: &str, project_id: Option<&str>) -> Result<()> {
+        self.conn().execute(
+            "INSERT OR REPLACE INTO secret_keys (key, project_id, created_at) VALUES (?1, ?2, ?3)",
+            params![key, project_id, now()],
+        )?;
+        Ok(())
+    }
+
+    pub fn unindex_secret(&self, key: &str) -> Result<()> {
+        self.conn()
+            .execute("DELETE FROM secret_keys WHERE key = ?1", [key])?;
+        Ok(())
+    }
+
+    pub fn secret_keys_for(&self, project_id: &str) -> Result<Vec<String>> {
+        self.strings(
+            "SELECT key FROM secret_keys WHERE project_id = ?1 ORDER BY key",
+            [project_id],
+        )
+    }
+
+    pub fn all_secret_keys(&self) -> Result<Vec<String>> {
+        self.strings("SELECT key FROM secret_keys ORDER BY key", [])
+    }
+
+    pub fn has_secret(&self, key: &str) -> Result<bool> {
+        Ok(self
+            .conn()
+            .query_row(
+                "SELECT 1 FROM secret_keys WHERE key = ?1",
+                [key],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some())
+    }
+
+    // --- plain (non-secret) project settings -----------------------------------------------
+
+    pub fn env_values(&self, project_id: &str) -> Result<BTreeMap<String, String>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare("SELECT name, value FROM env_values WHERE project_id = ?1")?;
+        let rows = stmt
+            .query_map([project_id], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<BTreeMap<String, String>>>()?;
+        Ok(rows)
+    }
+
+    pub fn set_env_value(&self, project_id: &str, name: &str, value: Option<&str>) -> Result<()> {
+        let conn = self.conn();
+        match value {
+            Some(v) => conn.execute(
+                "INSERT OR REPLACE INTO env_values (project_id, name, value) VALUES (?1, ?2, ?3)",
+                params![project_id, name, v],
+            )?,
+            None => conn.execute(
+                "DELETE FROM env_values WHERE project_id = ?1 AND name = ?2",
+                params![project_id, name],
+            )?,
+        };
+        Ok(())
+    }
+
+    // --- trusted publishers ----------------------------------------------------------------
+
+    pub fn trusted_publishers(&self) -> Result<Vec<String>> {
+        self.strings("SELECT owner FROM trusted_publishers ORDER BY owner", [])
+    }
+
+    pub fn is_trusted(&self, owner: &str) -> Result<bool> {
+        Ok(self
+            .conn()
+            .query_row(
+                "SELECT 1 FROM trusted_publishers WHERE owner = ?1",
+                [owner.to_lowercase()],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some())
+    }
+
+    pub fn set_trusted(&self, owner: &str, trusted: bool) -> Result<()> {
+        let owner = owner.to_lowercase();
+        let conn = self.conn();
+        if trusted {
+            conn.execute(
+                "INSERT OR IGNORE INTO trusted_publishers (owner, added_at) VALUES (?1, ?2)",
+                params![owner, now()],
+            )?;
+        } else {
+            conn.execute("DELETE FROM trusted_publishers WHERE owner = ?1", [owner])?;
+        }
+        Ok(())
+    }
+
+    // --- app settings ----------------------------------------------------------------------
+
+    pub fn setting(&self, key: &str) -> Result<Option<String>> {
+        Ok(self
+            .conn()
+            .query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| {
+                r.get(0)
+            })
+            .optional()?)
+    }
+
+    pub fn set_setting(&self, key: &str, value: Option<&str>) -> Result<()> {
+        let conn = self.conn();
+        match value {
+            Some(v) => conn.execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
+                params![key, v],
+            )?,
+            None => conn.execute("DELETE FROM settings WHERE key = ?1", [key])?,
+        };
+        Ok(())
+    }
+
+    fn strings<P: rusqlite::Params>(&self, sql: &str, p: P) -> Result<Vec<String>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(sql)?;
+        let rows = stmt
+            .query_map(p, |r| r.get(0))?
+            .collect::<rusqlite::Result<Vec<String>>>()?;
+        Ok(rows)
     }
 }
 
@@ -238,6 +438,12 @@ fn from_row(r: &Row<'_>) -> rusqlite::Result<Project> {
         stars: r.get::<_, Option<i64>>("stars")?.map(|s| s as u64),
         license: r.get("license")?,
         avatar_url: r.get("avatar_url")?,
+        is_private: r.get("is_private")?,
+        archived: r.get("archived")?,
+        repo_created_at: r.get("repo_created_at")?,
+        owner_created_at: r.get("owner_created_at")?,
+        consented_fingerprint: r.get("consented_fingerprint")?,
+        keys_reviewed: r.get("keys_reviewed")?,
         status: ProjectStatus::parse(&r.get::<_, String>("status")?),
         kind: recipe.as_ref().map(|rc| rc.kind),
         recipe,
@@ -264,6 +470,12 @@ mod tests {
             stars: Some(5),
             license: None,
             avatar_url: None,
+            is_private: false,
+            archived: false,
+            repo_created_at: None,
+            owner_created_at: None,
+            consented_fingerprint: None,
+            keys_reviewed: false,
             status: ProjectStatus::Added,
             kind: None,
             recipe: None,

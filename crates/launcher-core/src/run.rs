@@ -89,6 +89,8 @@ pub struct LaunchRequest<'a> {
     pub tools: &'a crate::runtime::Tools,
     /// Appended to the recipe's command, e.g. options typed into the console.
     pub extra_args: &'a [String],
+    /// The user's settings for this project (API keys etc.), injected into this run only.
+    pub user_env: &'a BTreeMap<String, String>,
     pub sink: EventSink,
 }
 
@@ -159,11 +161,12 @@ impl Supervisor {
             .split_first()
             .ok_or_else(|| Problem::internal("empty run command"))?;
         let program: PathBuf = proc::resolve_program(program, req.root, req.tools);
-        let extra: BTreeMap<String, String> = run
+        let mut extra: BTreeMap<String, String> = run
             .env
             .iter()
             .map(|(k, v)| (k.clone(), expand(v, &vars)))
             .collect();
+        extra.extend(req.user_env.iter().map(|(k, v)| (k.clone(), v.clone())));
         let env = project_env(req.app, req.project, &req.tools.path, &extra);
         let cwd = req.root.join(&run.cwd);
 

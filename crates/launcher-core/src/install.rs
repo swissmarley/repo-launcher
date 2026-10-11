@@ -44,7 +44,9 @@ impl ProjectLog {
         }
     }
 
+    /// Writes one line. Secrets are scrubbed before the line reaches the file or the UI.
     pub fn line(&self, stream: LogStream, line: String) {
+        let line = crate::redact::scrub_owned(line);
         if let Ok(mut f) = self.file.lock()
             && let Some(f) = f.as_mut()
         {

@@ -172,11 +172,6 @@ pub fn spawn(
                 Ok(0) | Err(_) => break,
                 Ok(n) => n,
             };
-            if let Ok(mut sb) = c.scrollback.lock() {
-                sb.extend(&buf[..n]);
-                let excess = sb.len().saturating_sub(SCROLLBACK_BYTES);
-                sb.drain(..excess);
-            }
             pending.extend_from_slice(&buf[..n]);
             let valid = match std::str::from_utf8(&pending) {
                 Ok(_) => pending.len(),
@@ -186,9 +181,17 @@ pub fn spawn(
             let text = String::from_utf8_lossy(&pending[..valid]).into_owned();
             pending.drain(..valid);
             if !text.is_empty() {
+                // Known secrets are hidden on screen too (best effort: a value split across
+                // two reads can slip through here, but never into the log file below).
+                let shown = crate::redact::scrub(&text).into_owned();
+                if let Ok(mut sb) = c.scrollback.lock() {
+                    sb.extend(shown.as_bytes());
+                    let excess = sb.len().saturating_sub(SCROLLBACK_BYTES);
+                    sb.drain(..excess);
+                }
                 sink(EngineEvent::Console {
                     project_id: id.clone(),
-                    data: text.clone(),
+                    data: shown,
                 });
             }
             // Also keep plain lines for the activity log and address discovery.

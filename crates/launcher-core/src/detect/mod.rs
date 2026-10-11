@@ -1,5 +1,6 @@
 //! Looks at a project's files and reports what it is. Pure: no network, no side effects.
 
+pub mod envvars;
 pub mod go;
 pub mod node;
 pub mod python;
@@ -44,6 +45,9 @@ pub struct DetectionReport {
     pub go: Option<go::GoInfo>,
     /// A Docker Compose file at the root, if any.
     pub compose_file: Option<String>,
+    /// Settings (API keys etc.) the code reads from its environment.
+    #[serde(default)]
+    pub env_hints: Vec<envvars::EnvHint>,
 }
 
 pub fn detect(tree: &FileTree) -> DetectionReport {
@@ -93,5 +97,6 @@ pub fn detect(tree: &FileTree) -> DetectionReport {
         .into_iter()
         .find(|f| has(f))
         .map(str::to_owned),
+        env_hints: envvars::scan(tree),
     }
 }

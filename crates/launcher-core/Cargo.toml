@@ -4,13 +4,16 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+base64 = "0.23.1"
 dirs = "7.0.0"
 flate2 = "1.1.10"
 futures-util = "0.3.34"
 hex = "0.4.3"
+keyring-core = "1.0.0"
 portable-pty = "0.9"
 process-wrap = { version = "10.0.1", features = ["tokio1"] }
-reqwest = { version = "0.13.5", features = ["stream", "json"] }
+regex = "1.13.1"
+reqwest = { version = "0.13.5", features = ["stream", "json", "form"] }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.152"
@@ -30,12 +33,22 @@ zip = "9.0.1"
 reqwest = "0.13.5"
 tempfile = "3.27.0"
 tokio = { version = "1.53.2", features = ["rt-multi-thread", "macros", "test-util"] }
+wiremock = "0.6.5"
 
 [target."cfg(windows)".dependencies]
 windows = { version = "0.62", features = ["Win32_System_Threading"] }
+windows-native-keyring-store = "1.1.0"
 
 [target."cfg(unix)".dependencies]
 libc = "0.2.190"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# The login keychain (the app is not sandboxed).
+apple-native-keyring-store = { version = "1.0.2", features = ["keychain"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Pure-Rust crypto and zbus' own executor: no OpenSSL, no second async runtime.
+zbus-secret-service-keyring-store = { version = "1.0.1", features = ["crypto-rust"] }
 
 [features]
 # Generates TypeScript bindings for the UI: `cargo test -p launcher-core --features ts`
