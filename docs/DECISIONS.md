@@ -231,3 +231,61 @@ reads the keys from the keychain itself and gives them only to the program it st
 macOS's Terminal needs (`open-in-terminal.command`) holds just the app's path and the project id.
 These runs belong to that terminal window (closing it ends them) and aren't shown as running in
 the app. This is the one exception to D-004, by design: the user chose their own terminal.
+
+### D-039 · Five starter projects, built in, each really installed in tests — 2026-10-11
+An empty library offers five projects that need no keys or account (a Streamlit map, a Gradio
+demo, a React and an Astro starter, cowsay), so a first install is one click. The list is compiled
+into the engine (`starters.rs`), and a test fails unless each one is installed and launched by
+`tests/real_repos.rs` (the manual "Real repos" workflow, 3 OSes). Their names and descriptions
+are UI strings. "Try it" adds the project and goes straight to its review: the safety gate is
+never skipped, even for our own picks.
+
+### D-040 · Signed updates, checked once a day, installed only when the user says — 2026-10-11
+Tauri's updater, with `requireSignedVersion` so an altered `latest.json` can't send people back
+to an older signed release. The public key reaches only release builds, through a config overlay
+made from a repository variable; other builds have no updater and say so. The check runs at most
+once a day, a little after starting, and can be turned off in Settings. It only downloads after
+the user clicks "Update and restart", which asks first when projects are running (installing
+restarts the app, which stops them, D-005).
+
+### D-041 · Uninstalling: one headless cleanup, used by installers and by Settings — 2026-10-11
+`repo-launcher --uninstall [--delete-data]` removes shortcuts, keychain entries and the login
+item (the same engine code as `rl remove-shortcuts` / `rl forget-secrets`) and optionally all
+data. The Windows uninstallers run it (NSIS hook; an MSI custom action that runs as the user and
+not during upgrades). Dragging a Mac app to the Bin runs nothing, and deb/rpm removal runs as
+root without the user's keychain, so on those Settings → "Remove all Repo Launcher data" is the
+way; it starts the same cleanup with `--after <pid>` and quits so no file is in use. The MSI keeps
+user data, as MSI uninstalls do; the setup.exe deletes it when its "Delete the application data"
+box is ticked.
+
+### D-042 · UI end-to-end tests run against the mocked engine; no real-app WebDriver yet — 2026-10-11
+PLAN §12 planned WebdriverIO + `@wdio/tauri-service` against the real app on 3 OSes per push. That
+means building the whole app three times per push, which the Actions budget doesn't allow, and
+the engine's real behavior is already covered by the Rust integration tests (fixture projects on
+3 OSes) and the shortcut cold-start smoke test. So Playwright runs the UI with the mocked engine
+in the Linux CI job: the core flows, keyboard-only use, an axe WCAG 2.1 AA scan in light and dark,
+and the pseudo-locale check. D-014 still holds: no build contains a WebDriver endpoint. Revisit if
+UI ↔ engine wiring bugs slip through.
+
+### D-043 · A project's own icon, read safely — 2026-10-11
+A project's card and shortcuts use its own icon: the file its `launcher.json` names, otherwise a
+logo or favicon in the usual places. Only real images (checked by their first bytes), up to
+256 KB, never through a symbolic link, and never from outside the project. Shortcuts use it when
+it's a square PNG, wrapped as `.icns` / `.ico` without re-encoding, so no image library is
+needed; otherwise they keep Repo Launcher's icon. Cards fall back to the owner's avatar, then a
+monogram.
+
+### D-044 · Every visible word comes from en.json, checked with a pseudo-locale — 2026-10-11
+The Rust shell's own words (tray, macOS app menu including Edit and Window, shortcut tooltips,
+`--exec` messages) are read from `ui/src/locales/en.json` too, and a test checks that every key
+the shell uses exists. The pseudo-locale (`?lng=pseudo` in the UI, `VITE_PSEUDO=1` for app builds,
+`REPO_LAUNCHER_PSEUDO=1` for the shell) accents, brackets and lengthens every string; a
+Playwright test fails on any visible text that isn't bracketed. Text that belongs to the user or
+a project (names, commands, logs) is marked `translate="no"`, which also tells browser
+translators to leave it alone.
+
+### D-045 · Linux packages depend on the AppIndicator library — 2026-10-11
+The tray needs `libayatana-appindicator3`; the tray library loads it when the icon is created and
+stops the whole app if it's missing, so the deb and rpm declare it. The AppImage bundles it. Desktops that don't show tray icons (GNOME
+without the extension) still need the library, but nothing in the app depends on the icon being
+visible (D-036).

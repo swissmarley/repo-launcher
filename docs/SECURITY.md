@@ -35,7 +35,7 @@ It can't make a malicious project safe. Only install projects from people you tr
 | Your GitHub token is sent to the wrong server | Yes | Sent only for private repositories, only to GitHub; never for public ones. Tested. |
 | Someone on your network uses a project you're running | Yes | Web projects bind to `127.0.0.1` where the framework allows it (D-009). Notebook servers get a fresh random token (D-022). |
 | A tampered runtime download (Python, Node, Go, uv) | Yes | SHA-256 hashes compiled into the app (D-015); uv verifies Python builds. |
-| A tampered Repo Launcher update | Phase 5 | Signed installers and signed auto-updates. |
+| A tampered Repo Launcher update | Yes | Updates install only with a valid signature from the release key, and the signature must name the version being installed (no downgrades). Installers are code-signed and notarized once the accounts exist ([RELEASING.md](RELEASING.md)). |
 | Malicious transitive dependencies (npm/PyPI packages) | No | Not individually reviewed. pnpm projects keep pnpm's default of not running dependencies' install scripts (D-020); npm projects run them, as npm does. |
 | Malware already on your computer | No | Out of scope for any desktop app. |
 | A project that stays hidden until a later update | Partly | Consent is tied to the exact install/run plan; if an update changes it, you're asked again. Changes to the project's *code* that keep the same plan are not re-reviewed. |
@@ -70,7 +70,8 @@ are refused with a clear message.
 
 The database records the *name* of every keychain entry Repo Launcher creates (never the
 value), so removing a project deletes its keys and a full uninstall can delete all of them
-(`rl forget-secrets`; the Phase 5 uninstallers call the same code). Repo Launcher never
+(`rl forget-secrets`; the Windows uninstallers and Settings → "Remove all Repo Launcher data" call
+the same code through `repo-launcher --uninstall`). Repo Launcher never
 enumerates your keychain.
 
 Settings a project marks as not secret (`"secret": false` in `launcher.json`, or non-key
@@ -190,6 +191,14 @@ suggest a plan, using **your own** Anthropic key from the keychain.
   where it is always a red warning ("suggested by AI") that needs typed confirmation.
 - Nothing suggested by AI ever runs without that confirmation.
 
+## Project icons
+
+A project's card and shortcuts can show the project's own icon (D-043). It is read from the
+downloaded files only: a real image (checked by its first bytes, not its name), at most 256 KB,
+never through a symbolic link and never from outside the project. It is shown as an image (an
+SVG shown this way can't run scripts) and, for shortcuts, wrapped as an icon file without being
+decoded.
+
 ## Shortcuts, links and background mode
 
 - **Links.** Repo Launcher registers `repolauncher://`. The only link it acts on is
@@ -215,7 +224,19 @@ suggest a plan, using **your own** Anthropic key from the keychain.
 - Rust and JavaScript dependencies are locked (`Cargo.lock`, `pnpm-lock.yaml`).
 - The WebView can call only Repo Launcher's own commands: no shell, file system or HTTP access
   from JavaScript, and links open in your browser only if they are `https://`.
-- Phase 5 adds signed and notarized installers and signed auto-updates.
+- Rust dependencies are checked by `cargo deny` in CI: allowed licenses, RustSec advisories,
+  crates.io only ([THIRD_PARTY.md](THIRD_PARTY.md)).
+- **Updates** use Tauri's updater: an update is installed only if its minisign signature
+  verifies against the public key compiled into the release build, and the signed version must
+  match the announced one (`requireSignedVersion`), so an altered `latest.json` can't install an
+  older release. The check asks GitHub for `latest.json` at most once a day (it can be turned
+  off in Settings) and downloads nothing until the user clicks "Update and restart". Builds
+  without the release key have no updater at all.
+- **Installers** are code-signed (Windows: Azure Artifact Signing) and signed and notarized
+  (macOS: Developer ID) through CI secrets once the accounts exist; until then they are
+  unsigned and the OS warns about them. The signing keys exist only as environment variables of
+  the build step; nothing secret is written into an installer, `latest.json` or a log
+  ([RELEASING.md](RELEASING.md)).
 
 ## Things that live outside the app's folder
 
@@ -232,6 +253,11 @@ Repo Launcher keeps everything in its own data folder, with these known exceptio
 - **The `repolauncher://` link handler**: registered by the installer (and, for development builds
   and AppImages, by the app itself in the per-user registry or applications folder).
 - Anything a project itself writes elsewhere: projects run as you.
+
+**Removing it all**: Settings → "Remove all Repo Launcher data" (and the Windows uninstallers)
+remove every item above that Repo Launcher made, then its data folder and the WebView's folders
+(DECISIONS D-041). Go's own telemetry and configuration files are left alone: they may be your
+own Go installation's.
 
 ## Known limits (v1)
 
