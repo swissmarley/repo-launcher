@@ -42,7 +42,11 @@
     "checkUpdates": "Check for updates",
     "repair": "Install again",
     "keys": "Keys and settings",
-    "done": "Done"
+    "done": "Done",
+    "createShortcut": "Add a shortcut",
+    "removeShortcut": "Remove the shortcut",
+    "startAtLogin": "Start when I log in",
+    "useSystemTerminal": "Open in my terminal"
   },
   "stage": {
     "downloading": "Downloading",
@@ -152,6 +156,18 @@
     "PROJECT_NOT_FOUND": {
       "title": "That project isn't in your library anymore.",
       "body": ""
+    },
+    "SHORTCUT_FAILED": {
+      "title": "We couldn't make the shortcut.",
+      "body": "Something on this computer stopped Repo Launcher from saving it. Try again. If it keeps happening, copy the diagnostics and report it."
+    },
+    "NO_SYSTEM_TERMINAL": {
+      "title": "We couldn't find a terminal app to open it in.",
+      "body": "Install a terminal app such as GNOME Terminal or Konsole, or turn off “Open in my terminal” to use Repo Launcher's own window."
+    },
+    "LOGIN_ITEM_FAILED": {
+      "title": "Repo Launcher couldn't change whether it starts when you log in.",
+      "body": "Your system didn't allow the change. Try again, or check the login items in your system settings."
     },
     "INTERNAL": {
       "title": "Something went wrong on our side.",
@@ -283,6 +299,16 @@
       "heading": "AI suggestions",
       "toggle": "Let AI suggest how to start projects Repo Launcher doesn't recognize",
       "why": "Off by default. Uses your own Anthropic account. You'll see exactly what is sent before anything leaves your computer, and every suggestion is reviewed like any other project."
+    },
+    "startup": {
+      "heading": "Starting up",
+      "launchAtLogin": "Start Repo Launcher when I log in",
+      "why": "It starts quietly in the background, with just an icon in the {{place}}, and starts the projects you've set to start when you log in.",
+      "place": {
+        "macos": "menu bar",
+        "windows": "taskbar",
+        "linux": "system tray"
+      }
     }
   },
   "safety": {
@@ -406,5 +432,43 @@
     "planReady": "AI suggested a plan for this project.",
     "notRunnable": "AI doesn't think this project can be started as an app.",
     "review": "Review the plan"
+  },
+  "shortcut": {
+    "created": {
+      "macos": "Added {{name}} to your Applications folder. To keep it in the Dock, open it once and choose Options › Keep in Dock, or drag it from Applications to the Dock.",
+      "windows": "Added {{name}} to your Start menu and desktop.",
+      "linux": "Added {{name}} to your applications menu."
+    },
+    "removed": "The shortcut was removed."
+  },
+  "login": {
+    "appTurnedOn": "Repo Launcher will now also start when you log in, so it can start {{name}}."
+  },
+  "quit": {
+    "title": "Quit Repo Launcher?",
+    "body_one": "{{names}} is still running. Quitting stops it.",
+    "body_other": "These projects are still running: {{names}}. Quitting stops them.",
+    "confirm": "Stop and quit"
+  },
+  "orphans": {
+    "body_one": "Repo Launcher closed unexpectedly while {{names}} was running. It was stopped so it doesn't keep running unseen; launch it again whenever you like.",
+    "body_other": "Repo Launcher closed unexpectedly while these projects were running: {{names}}. They were stopped so they don't keep running unseen; launch them again whenever you like."
+  },
+  "tray": {
+    "tooltip": "Repo Launcher",
+    "running": "Running",
+    "nothingRunning": "No projects running",
+    "open": "Open",
+    "showConsole": "Show window",
+    "stop": "Stop",
+    "show": "Show Repo Launcher",
+    "quit": "Quit Repo Launcher"
+  },
+  "exec": {
+    "finished": "{{name}} finished.",
+    "finishedCode": "{{name}} stopped with exit code {{code}}.",
+    "again": "Type options and press Enter to run it again, or just press Enter to close this window:",
+    "problem": "{{name}} couldn't start. {{title}}",
+    "pressEnter": "Press Enter to close this window."
   }
 }

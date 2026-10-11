@@ -18,4 +18,12 @@ repoCreatedAt: string | null, ownerCreatedAt: string | null,
 /**
  * The user has seen the keys form for this project once.
  */
-keysReviewed: boolean, status: ProjectStatus, kind: AppKind | null, createdAt: number, updatedAt: number, };
+keysReviewed: boolean, 
+/**
+ * Launch this project when Repo Launcher starts at login.
+ */
+startAtLogin: boolean, 
+/**
+ * Terminal programs open in the system's terminal instead of the built-in console.
+ */
+useSystemTerminal: boolean, status: ProjectStatus, kind: AppKind | null, createdAt: number, updatedAt: number, };

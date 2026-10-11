@@ -21,6 +21,10 @@ const USAGE: &str = "usage:
   rl keys <id>              list the settings a project asks for
   rl set-key <id> <NAME>    read a value from stdin into the keychain (empty clears it)
   rl uninstall <id>
+  rl shortcut <id> [--exe <app>]   create (or repair) shortcuts that open it with the app
+  rl unshortcut <id>
+  rl remove-shortcuts       delete every shortcut Repo Launcher made
+  rl runs <id>              the newest run: its address and whether it is still running
   rl github status|login|logout|repos
   rl config github-app <client-id> [app-slug]
   rl forget-secrets         delete every keychain entry Repo Launcher made
@@ -148,6 +152,37 @@ async fn run(args: &[String]) -> Result<ExitCode, Problem> {
         (Some("run"), Some(id)) => {
             return run_project(&engine, id, arg(2) == Some("--smoke")).await;
         }
+        (Some("shortcut"), Some(id)) => {
+            let exe = match args.iter().position(|a| a == "--exe") {
+                Some(i) => std::path::PathBuf::from(arg(i + 1).ok_or_else(usage)?),
+                // During development the app is built next to `rl`.
+                None => std::env::current_exe()?
+                    .with_file_name(format!("repo-launcher{}", std::env::consts::EXE_SUFFIX)),
+            };
+            let launcher = launcher_core::shortcuts::Launcher {
+                exe: std::path::absolute(exe)?,
+                ..Default::default()
+            };
+            for s in engine.create_shortcuts(id, &launcher)? {
+                println!("{:?}  {}", s.kind, s.path);
+            }
+        }
+        (Some("unshortcut"), Some(id)) => {
+            engine.remove_shortcuts(id)?;
+            println!("removed the shortcuts of {id}");
+        }
+        (Some("remove-shortcuts"), None) => {
+            let n = engine.remove_all_shortcuts()?;
+            println!("removed {n} shortcuts");
+        }
+        (Some("runs"), Some(id)) => match engine.latest_run(id)? {
+            Some((url, open)) => println!(
+                "{} {}",
+                if open { "running" } else { "ended" },
+                url.unwrap_or_default()
+            ),
+            None => println!("never run"),
+        },
         (Some("uninstall"), Some(id)) => {
             engine.uninstall(id).await?;
             println!("removed {id}");

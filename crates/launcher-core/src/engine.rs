@@ -8,15 +8,17 @@ use crate::paths::AppPaths;
 use crate::problem::{FixAction, Problem, ProblemCode, Result};
 use crate::recipe;
 use crate::recipe::keys::{self, KnownKey};
-use crate::run::{LaunchInfo, LaunchRequest, Supervisor};
+use crate::run;
+use crate::run::{LaunchInfo, LaunchRequest, Prepared, Supervisor};
 use crate::runtime;
 use crate::safety::{self, SafetyReport};
 use crate::secrets::{self, KeychainStore, Secret, SecretStore, Vault};
+use crate::shortcuts::{self, Launcher, ShortcutDirs};
 use crate::source::auth::{
     self, AppConfig, Auth, DeviceCode, GitHubAccount, RemoteRepo, StoredToken,
 };
 use crate::source::{self, SourceSpec, archive, github::GitHub, url::RepoRef};
-use crate::store::{self, Project, ProjectStatus, Store};
+use crate::store::{self, EndReason, Project, ProjectStatus, Shortcut, Store};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -35,6 +37,7 @@ pub struct EngineOptions {
     pub github_api: String,
     pub github_web: String,
     pub anthropic_api: String,
+    pub shortcut_dirs: ShortcutDirs,
 }
 
 impl Default for EngineOptions {
@@ -44,6 +47,7 @@ impl Default for EngineOptions {
             github_api: "https://api.github.com".into(),
             github_web: "https://github.com".into(),
             anthropic_api: "https://api.anthropic.com".into(),
+            shortcut_dirs: ShortcutDirs::for_current_user(),
         }
     }
 }
@@ -93,10 +97,11 @@ pub struct Engine {
     http: reqwest::Client,
     github: GitHub,
     auth: Auth,
-    store: Store,
+    store: Arc<Store>,
     vault: Vault,
     supervisor: Supervisor,
     anthropic_api: String,
+    shortcut_dirs: ShortcutDirs,
     pending_sign_in: Mutex<Option<auth::Pending>>,
     /// Refreshing rotates the refresh token, so only one refresh may run at a time.
     token_lock: tokio::sync::Mutex<()>,
@@ -113,7 +118,7 @@ impl Engine {
             .connect_timeout(std::time::Duration::from_secs(15))
             .build()
             .map_err(Problem::internal)?;
-        let store = Store::open(&paths.db())?;
+        let store = Arc::new(Store::open(&paths.db())?);
         let github = GitHub::with_bases(http.clone(), &opts.github_api, &opts.github_web);
         let auth = Auth::new(http.clone(), &opts.github_web, &opts.github_api);
         Ok(Self {
@@ -121,10 +126,11 @@ impl Engine {
             http,
             github,
             auth,
-            store,
             vault: Vault::new(opts.secrets),
-            supervisor: Supervisor::default(),
+            supervisor: Supervisor::new(store.clone()),
+            store,
             anthropic_api: opts.anthropic_api,
+            shortcut_dirs: opts.shortcut_dirs,
             pending_sign_in: Mutex::default(),
             token_lock: tokio::sync::Mutex::new(()),
         })
@@ -148,6 +154,10 @@ impl Engine {
 
     pub fn running_url(&self, id: &str) -> Option<String> {
         self.supervisor.url(id)
+    }
+
+    pub fn running_ids(&self) -> Vec<String> {
+        self.supervisor.running_ids()
     }
 
     pub fn run_history(&self, id: &str) -> Vec<String> {
@@ -201,6 +211,8 @@ impl Engine {
             owner_created_at: None,
             consented_fingerprint: None,
             keys_reviewed: false,
+            start_at_login: false,
+            use_system_terminal: false,
             status: ProjectStatus::Added,
             kind: None,
             recipe: None,
@@ -812,6 +824,21 @@ impl Engine {
         sink: EventSink,
         extra_args: &[String],
     ) -> Result<LaunchInfo> {
+        let parts = self.launch_parts(id).await?;
+        self.supervisor
+            .launch(parts.request(&self.paths, id, extra_args, sink))
+            .await
+    }
+
+    /// The project's command for running it outside the Launcher's supervision, in the
+    /// system's own terminal (`--exec`). Keys come from the keychain now, into this process's
+    /// memory only: nothing is written to a script or file.
+    pub async fn exec_command(&self, id: &str, extra_args: &[String]) -> Result<Prepared> {
+        let parts = self.launch_parts(id).await?;
+        run::prepare(&parts.request(&self.paths, id, extra_args, crate::events::null_sink()))
+    }
+
+    async fn launch_parts(&self, id: &str) -> Result<LaunchParts> {
         let project = self.store.get(id)?;
         let recipe = match (&project.status, &project.recipe) {
             (ProjectStatus::Installed, Some(r)) => r.clone(),
@@ -819,24 +846,18 @@ impl Engine {
         };
         // Keys are read from the keychain now and handed only to this run's process.
         let user_env = self.launch_env(id, &recipe)?;
-        let pp = self.paths.project(id);
+        let project_paths = self.paths.project(id);
         let root = self.project_root(&project);
         let mut tools = self.prepare_tools(&recipe, &root, None).await?;
-        tools.python = pp.venv_python();
-        tools.path.insert(0, pp.venv_bin());
-        self.supervisor
-            .launch(LaunchRequest {
-                app: &self.paths,
-                project: &pp,
-                root: &root,
-                project_id: id,
-                recipe: &recipe,
-                tools: &tools,
-                extra_args,
-                user_env: &user_env,
-                sink,
-            })
-            .await
+        tools.python = project_paths.venv_python();
+        tools.path.insert(0, project_paths.venv_bin());
+        Ok(LaunchParts {
+            recipe,
+            user_env,
+            project_paths,
+            root,
+            tools,
+        })
     }
 
     /// The values of the project's settings, or `MISSING_KEYS` if a required one is empty.
@@ -901,9 +922,174 @@ impl Engine {
         self.supervisor.stop_all().await;
     }
 
+    /// After the Launcher itself stopped unexpectedly: projects still running from then are
+    /// stopped (verified by process start time, so a reused pid is never touched), and the
+    /// rest are recorded as ended. Returns the ids of the projects that were stopped.
+    ///
+    /// They are stopped rather than adopted: their output went to the Launcher that is gone,
+    /// so most servers fail as soon as they log a request (DECISIONS D-035).
+    pub async fn reconcile(&self) -> Result<Vec<String>> {
+        let mut stopped = Vec::new();
+        for run in self.store.open_runs()? {
+            if self.supervisor.is_running(&run.project_id) {
+                continue;
+            }
+            if crate::procinfo::still_running(&run) {
+                crate::procinfo::stop(&run, std::time::Duration::from_secs(5)).await;
+                self.store.end_run(run.id, None, EndReason::Orphaned)?;
+                if !stopped.contains(&run.project_id) {
+                    stopped.push(run.project_id.clone());
+                }
+            } else {
+                self.store.end_run(run.id, None, EndReason::Lost)?;
+            }
+        }
+        Ok(stopped)
+    }
+
+    /// The address of the project's newest run and whether it is still open (for `rl`).
+    pub fn latest_run(&self, id: &str) -> Result<Option<(Option<String>, bool)>> {
+        self.store.latest_run(id)
+    }
+
+    // --- shortcuts and starting at login ---------------------------------------------------
+
+    pub fn shortcuts(&self, id: &str) -> Result<Vec<Shortcut>> {
+        self.store.shortcuts(Some(id))
+    }
+
+    /// Creates the project's shortcuts (or rewrites them in place: "repair"). Each file is
+    /// recorded, so removing the project or the app removes it too.
+    pub fn create_shortcuts(&self, id: &str, launcher: &Launcher) -> Result<Vec<Shortcut>> {
+        let project = self.store.get(id)?;
+        let ours: Vec<Shortcut> = self.store.shortcuts(Some(id))?;
+        let others: Vec<String> = self
+            .store
+            .shortcuts(None)?
+            .into_iter()
+            .filter(|s| s.project_id != id)
+            .map(|s| s.path)
+            .collect();
+        let mut planned = shortcuts::plan(&self.shortcut_dirs, &project.name, id, |p| {
+            let p = p.to_string_lossy();
+            others.iter().any(|o| *o == p) || (p_exists(&p) && !ours.iter().any(|s| s.path == p))
+        });
+        // Keep the files this project already has instead of making numbered copies.
+        for (kind, path) in &mut planned {
+            if let Some(existing) = ours.iter().find(|s| s.kind == *kind) {
+                *path = PathBuf::from(&existing.path);
+            }
+        }
+        let mut made = Vec::new();
+        for (kind, path) in planned {
+            shortcuts::write(
+                &path,
+                &project.name,
+                id,
+                launcher,
+                &self.paths.root.join("icons"),
+            )
+            .map_err(|e| {
+                Problem::new(ProblemCode::ShortcutFailed).detail(format!("{}: {e}", path.display()))
+            })?;
+            let shortcut = Shortcut {
+                project_id: id.to_owned(),
+                kind,
+                path: path.to_string_lossy().into_owned(),
+                target: launcher.target(id),
+            };
+            self.store.add_shortcut(&shortcut)?;
+            made.push(shortcut);
+        }
+        Ok(made)
+    }
+
+    pub fn remove_shortcuts(&self, id: &str) -> Result<()> {
+        for s in self.store.shortcuts(Some(id))? {
+            shortcuts::remove(Path::new(&s.path)).map_err(|e| {
+                Problem::new(ProblemCode::ShortcutFailed).detail(format!("{}: {e}", s.path))
+            })?;
+            self.store.remove_shortcut(&s.path)?;
+        }
+        Ok(())
+    }
+
+    /// Removes every shortcut Repo Launcher made (full uninstall). Returns how many.
+    pub fn remove_all_shortcuts(&self) -> Result<usize> {
+        let all = self.store.shortcuts(None)?;
+        for s in &all {
+            if let Err(e) = shortcuts::remove(Path::new(&s.path)) {
+                tracing::warn!("removing shortcut {}: {e}", s.path);
+                continue;
+            }
+            self.store.remove_shortcut(&s.path)?;
+        }
+        Ok(all.len())
+    }
+
+    /// At startup: shortcuts whose target changed (the app was moved or updated to a new
+    /// path, e.g. an AppImage) are rewritten. Ones the user deleted are forgotten, not brought
+    /// back. Returns how many were rewritten.
+    pub fn repair_shortcuts(&self, launcher: &Launcher) -> Result<usize> {
+        let mut fixed = 0;
+        for s in self.store.shortcuts(None)? {
+            let path = Path::new(&s.path);
+            if !path.exists() {
+                self.store.remove_shortcut(&s.path)?;
+                continue;
+            }
+            if s.target == launcher.target(&s.project_id) {
+                continue;
+            }
+            let Ok(project) = self.store.get(&s.project_id) else {
+                continue;
+            };
+            match shortcuts::write(
+                path,
+                &project.name,
+                &s.project_id,
+                launcher,
+                &self.paths.root.join("icons"),
+            ) {
+                Ok(()) => {
+                    self.store.add_shortcut(&Shortcut {
+                        target: launcher.target(&s.project_id),
+                        ..s
+                    })?;
+                    fixed += 1;
+                }
+                Err(e) => tracing::warn!("repairing shortcut {}: {e}", s.path),
+            }
+        }
+        Ok(fixed)
+    }
+
+    pub fn set_start_at_login(&self, id: &str, on: bool) -> Result<()> {
+        self.store.get(id)?;
+        self.store.set_start_at_login(id, on)
+    }
+
+    /// Installed projects the user wants started when they log in.
+    pub fn login_projects(&self) -> Result<Vec<Project>> {
+        Ok(self
+            .store
+            .list()?
+            .into_iter()
+            .filter(|p| p.start_at_login && p.status == ProjectStatus::Installed)
+            .collect())
+    }
+
+    pub fn set_use_system_terminal(&self, id: &str, on: bool) -> Result<()> {
+        self.store.get(id)?;
+        self.store.set_use_system_terminal(id, on)
+    }
+
     /// Stops the project and removes everything it put on disk and in the keychain.
     pub async fn uninstall(&self, id: &str) -> Result<()> {
         self.supervisor.stop(id).await;
+        if let Err(p) = self.remove_shortcuts(id) {
+            tracing::warn!("removing shortcuts of {id}: {p}");
+        }
         // If the keychain can't be reached, its index rows stay so a later cleanup can finish.
         if let Err(p) = self.vault.delete_project(&self.store, id) {
             tracing::warn!("keeping keychain index for {id}: {p}");
@@ -1267,6 +1453,41 @@ impl Engine {
             Err(p) => Err(p),
         }
     }
+}
+
+/// The pieces of a launch that the engine looks up; borrowed into a [`LaunchRequest`].
+struct LaunchParts {
+    recipe: recipe::Recipe,
+    user_env: BTreeMap<String, String>,
+    project_paths: crate::paths::ProjectPaths,
+    root: PathBuf,
+    tools: runtime::Tools,
+}
+
+impl LaunchParts {
+    fn request<'a>(
+        &'a self,
+        app: &'a AppPaths,
+        id: &'a str,
+        extra_args: &'a [String],
+        sink: EventSink,
+    ) -> LaunchRequest<'a> {
+        LaunchRequest {
+            app,
+            project: &self.project_paths,
+            root: &self.root,
+            project_id: id,
+            recipe: &self.recipe,
+            tools: &self.tools,
+            extra_args,
+            user_env: &self.user_env,
+            sink,
+        }
+    }
+}
+
+fn p_exists(p: &str) -> bool {
+    Path::new(p).exists()
 }
 
 /// Finds the folder holding a program the user installed themselves. Apps started from the

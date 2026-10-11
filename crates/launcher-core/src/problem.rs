@@ -53,6 +53,12 @@ pub enum ProblemCode {
     AiFailed,
     /// The AI suggestion didn't pass the launcher.json validator.
     AiInvalidRecipe,
+    /// A shortcut file couldn't be created or removed.
+    ShortcutFailed,
+    /// No terminal program was found to open a project in ("open in my terminal", Linux).
+    NoSystemTerminal,
+    /// Starting at login couldn't be turned on or off.
+    LoginItemFailed,
     Internal,
 }
 

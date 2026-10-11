@@ -61,7 +61,37 @@ CREATE TABLE settings (
     value       TEXT NOT NULL
 );
 "#,
+    r#"
+ALTER TABLE projects ADD COLUMN start_at_login INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE projects ADD COLUMN use_system_terminal INTEGER NOT NULL DEFAULT 0;
+-- One row per launch. Rows without ended_at after a crash are checked on the next start.
+CREATE TABLE runs (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id      TEXT NOT NULL,
+    pid             INTEGER,
+    pgid            INTEGER,
+    proc_start_ms   INTEGER,
+    boot_ms         INTEGER,
+    url             TEXT,
+    started_at      INTEGER NOT NULL,
+    ended_at        INTEGER,
+    exit_code       INTEGER,
+    end_reason      TEXT
+);
+CREATE INDEX runs_project ON runs(project_id, id);
+-- Every shortcut file we created, so removing a project (or the app) removes them.
+CREATE TABLE shortcuts (
+    path        TEXT PRIMARY KEY,
+    project_id  TEXT NOT NULL,
+    kind        TEXT NOT NULL,
+    target      TEXT NOT NULL,
+    created_at  INTEGER NOT NULL
+);
+"#,
 ];
+
+/// Finished runs kept per project.
+const RUNS_KEPT: i64 = 20;
 
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -121,6 +151,10 @@ pub struct Project {
     pub consented_fingerprint: Option<String>,
     /// The user has seen the keys form for this project once.
     pub keys_reviewed: bool,
+    /// Launch this project when Repo Launcher starts at login.
+    pub start_at_login: bool,
+    /// Terminal programs open in the system's terminal instead of the built-in console.
+    pub use_system_terminal: bool,
     pub status: ProjectStatus,
     pub kind: Option<AppKind>,
     #[serde(skip)]
@@ -129,6 +163,91 @@ pub struct Project {
     pub created_at: i64,
     #[cfg_attr(feature = "ts", ts(type = "number"))]
     pub updated_at: i64,
+}
+
+/// A launch as recorded in the database: enough to find the process again after a crash.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunRecord {
+    pub id: i64,
+    pub project_id: String,
+    pub pid: Option<u32>,
+    /// The POSIX process group (the project's whole tree); `None` on Windows.
+    pub pgid: Option<u32>,
+    /// When the process started, in ms since the epoch, to tell it apart from a reused pid.
+    pub proc_start_ms: Option<i64>,
+    pub boot_ms: Option<i64>,
+    pub url: Option<String>,
+}
+
+/// Why a run ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EndReason {
+    UserStop,
+    Exited,
+    Crashed,
+    AppQuit,
+    /// Found gone after the Launcher itself stopped unexpectedly.
+    Lost,
+    /// Still running after the Launcher stopped unexpectedly, and stopped on its next start.
+    Orphaned,
+}
+
+impl EndReason {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::UserStop => "user_stop",
+            Self::Exited => "exited",
+            Self::Crashed => "crashed",
+            Self::AppQuit => "app_quit",
+            Self::Lost => "lost",
+            Self::Orphaned => "orphaned",
+        }
+    }
+}
+
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ShortcutKind {
+    /// Windows Start menu.
+    StartMenu,
+    Desktop,
+    /// macOS ~/Applications (Launchpad, Spotlight).
+    Applications,
+    /// Linux applications menu.
+    AppMenu,
+}
+
+impl ShortcutKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::StartMenu => "start_menu",
+            Self::Desktop => "desktop",
+            Self::Applications => "applications",
+            Self::AppMenu => "app_menu",
+        }
+    }
+    fn parse(s: &str) -> Self {
+        match s {
+            "start_menu" => Self::StartMenu,
+            "desktop" => Self::Desktop,
+            "applications" => Self::Applications,
+            _ => Self::AppMenu,
+        }
+    }
+}
+
+/// A shortcut file Repo Launcher created. `target` is what it opens (the app's path or a link),
+/// so shortcuts can be repaired when the app moves.
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Shortcut {
+    pub project_id: String,
+    pub kind: ShortcutKind,
+    pub path: String,
+    #[serde(skip)]
+    pub target: String,
 }
 
 pub struct Store {
@@ -282,13 +401,146 @@ impl Store {
         Ok(())
     }
 
-    /// Removes the project and its plain settings. Its keychain entries are deleted by the
-    /// caller first (see `secrets::Vault::delete_project`).
+    pub fn set_start_at_login(&self, id: &str, on: bool) -> Result<()> {
+        self.conn().execute(
+            "UPDATE projects SET start_at_login = ?2 WHERE id = ?1",
+            params![id, on],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_use_system_terminal(&self, id: &str, on: bool) -> Result<()> {
+        self.conn().execute(
+            "UPDATE projects SET use_system_terminal = ?2 WHERE id = ?1",
+            params![id, on],
+        )?;
+        Ok(())
+    }
+
+    /// Removes the project, its plain settings and its run history. Its keychain entries and
+    /// shortcut files are removed by the caller first.
     pub fn delete(&self, id: &str) -> Result<()> {
         let conn = self.conn();
         conn.execute("DELETE FROM env_values WHERE project_id = ?1", [id])?;
+        conn.execute("DELETE FROM runs WHERE project_id = ?1", [id])?;
+        conn.execute("DELETE FROM shortcuts WHERE project_id = ?1", [id])?;
         conn.execute("DELETE FROM projects WHERE id = ?1", [id])?;
         Ok(())
+    }
+
+    // --- runs ------------------------------------------------------------------------------
+
+    /// Records a launch; returns the run's id. Old finished runs of the project are pruned.
+    pub fn begin_run(&self, r: &RunRecord) -> Result<i64> {
+        let conn = self.conn();
+        conn.execute(
+            "INSERT INTO runs (project_id, pid, pgid, proc_start_ms, boot_ms, url, started_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                r.project_id,
+                r.pid,
+                r.pgid,
+                r.proc_start_ms,
+                r.boot_ms,
+                r.url,
+                now()
+            ],
+        )?;
+        let id = conn.last_insert_rowid();
+        conn.execute(
+            "DELETE FROM runs WHERE project_id = ?1 AND ended_at IS NOT NULL AND id NOT IN
+               (SELECT id FROM runs WHERE project_id = ?1 ORDER BY id DESC LIMIT ?2)",
+            params![r.project_id, RUNS_KEPT],
+        )?;
+        Ok(id)
+    }
+
+    pub fn set_run_url(&self, run: i64, url: &str) -> Result<()> {
+        self.conn()
+            .execute("UPDATE runs SET url = ?2 WHERE id = ?1", params![run, url])?;
+        Ok(())
+    }
+
+    pub fn end_run(&self, run: i64, exit_code: Option<i32>, reason: EndReason) -> Result<()> {
+        self.conn().execute(
+            "UPDATE runs SET ended_at = ?2, exit_code = ?3, end_reason = ?4
+             WHERE id = ?1 AND ended_at IS NULL",
+            params![run, now(), exit_code, reason.as_str()],
+        )?;
+        Ok(())
+    }
+
+    /// Runs that never recorded an end: still going, or the Launcher stopped unexpectedly.
+    pub fn open_runs(&self) -> Result<Vec<RunRecord>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, project_id, pid, pgid, proc_start_ms, boot_ms, url FROM runs
+             WHERE ended_at IS NULL ORDER BY id",
+        )?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(RunRecord {
+                    id: r.get(0)?,
+                    project_id: r.get(1)?,
+                    pid: r.get(2)?,
+                    pgid: r.get(3)?,
+                    proc_start_ms: r.get(4)?,
+                    boot_ms: r.get(5)?,
+                    url: r.get(6)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// The newest run of a project: (url, still open).
+    pub fn latest_run(&self, project_id: &str) -> Result<Option<(Option<String>, bool)>> {
+        Ok(self
+            .conn()
+            .query_row(
+                "SELECT url, ended_at IS NULL FROM runs WHERE project_id = ?1
+                 ORDER BY id DESC LIMIT 1",
+                [project_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?)
+    }
+
+    // --- shortcuts -------------------------------------------------------------------------
+
+    pub fn add_shortcut(&self, s: &Shortcut) -> Result<()> {
+        self.conn().execute(
+            "INSERT OR REPLACE INTO shortcuts (path, project_id, kind, target, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![s.path, s.project_id, s.kind.as_str(), s.target, now()],
+        )?;
+        Ok(())
+    }
+
+    pub fn remove_shortcut(&self, path: &str) -> Result<()> {
+        self.conn()
+            .execute("DELETE FROM shortcuts WHERE path = ?1", [path])?;
+        Ok(())
+    }
+
+    /// Shortcuts of one project, or of every project with `None`.
+    pub fn shortcuts(&self, project_id: Option<&str>) -> Result<Vec<Shortcut>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT project_id, kind, path, target FROM shortcuts
+             WHERE ?1 IS NULL OR project_id = ?1 ORDER BY path",
+        )?;
+        let rows = stmt
+            .query_map([project_id], |r| {
+                Ok(Shortcut {
+                    project_id: r.get(0)?,
+                    kind: ShortcutKind::parse(&r.get::<_, String>(1)?),
+                    path: r.get(2)?,
+                    target: r.get(3)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
     }
 
     // --- keychain index -------------------------------------------------------------------
@@ -444,6 +696,8 @@ fn from_row(r: &Row<'_>) -> rusqlite::Result<Project> {
         owner_created_at: r.get("owner_created_at")?,
         consented_fingerprint: r.get("consented_fingerprint")?,
         keys_reviewed: r.get("keys_reviewed")?,
+        start_at_login: r.get("start_at_login")?,
+        use_system_terminal: r.get("use_system_terminal")?,
         status: ProjectStatus::parse(&r.get::<_, String>("status")?),
         kind: recipe.as_ref().map(|rc| rc.kind),
         recipe,
@@ -476,6 +730,8 @@ mod tests {
             owner_created_at: None,
             consented_fingerprint: None,
             keys_reviewed: false,
+            start_at_login: false,
+            use_system_terminal: false,
             status: ProjectStatus::Added,
             kind: None,
             recipe: None,
@@ -501,6 +757,54 @@ mod tests {
         );
         s.delete("a1").unwrap();
         assert_eq!(s.get("a1").unwrap_err().code, ProblemCode::ProjectNotFound);
+    }
+
+    #[test]
+    fn runs_open_until_ended_and_old_ones_are_pruned() {
+        let s = Store::in_memory().unwrap();
+        let rec = |pid| RunRecord {
+            id: 0,
+            project_id: "a1".into(),
+            pid: Some(pid),
+            pgid: Some(pid),
+            proc_start_ms: Some(1000),
+            boot_ms: None,
+            url: None,
+        };
+        let first = s.begin_run(&rec(10)).unwrap();
+        s.set_run_url(first, "http://127.0.0.1:8501/").unwrap();
+        let open = s.open_runs().unwrap();
+        assert_eq!(open.len(), 1);
+        assert_eq!(open[0].url.as_deref(), Some("http://127.0.0.1:8501/"));
+        s.end_run(first, Some(0), EndReason::Exited).unwrap();
+        assert!(s.open_runs().unwrap().is_empty());
+        for pid in 0..30 {
+            let id = s.begin_run(&rec(pid)).unwrap();
+            s.end_run(id, None, EndReason::UserStop).unwrap();
+        }
+        let kept: i64 = s
+            .conn()
+            .query_row("SELECT COUNT(*) FROM runs", [], |r| r.get(0))
+            .unwrap();
+        assert!(kept <= RUNS_KEPT + 1, "{kept}");
+    }
+
+    #[test]
+    fn shortcuts_are_indexed_per_project() {
+        let s = Store::in_memory().unwrap();
+        s.insert(&sample("a1", "github:o/r")).unwrap();
+        let sc = Shortcut {
+            project_id: "a1".into(),
+            kind: ShortcutKind::Desktop,
+            path: "/x/demo.lnk".into(),
+            target: "/app".into(),
+        };
+        s.add_shortcut(&sc).unwrap();
+        assert_eq!(s.shortcuts(Some("a1")).unwrap(), vec![sc.clone()]);
+        assert_eq!(s.shortcuts(None).unwrap().len(), 1);
+        assert!(s.shortcuts(Some("zz")).unwrap().is_empty());
+        s.delete("a1").unwrap();
+        assert!(s.shortcuts(None).unwrap().is_empty());
     }
 
     #[test]

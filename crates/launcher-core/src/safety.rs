@@ -570,6 +570,8 @@ mod tests {
             owner_created_at: None,
             consented_fingerprint: None,
             keys_reviewed: false,
+            start_at_login: false,
+            use_system_terminal: false,
             status: ProjectStatus::Added,
             kind: None,
             recipe: None,

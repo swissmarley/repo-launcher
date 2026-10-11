@@ -15,12 +15,14 @@ pub mod install;
 pub mod paths;
 pub mod problem;
 pub mod proc;
+pub mod procinfo;
 pub mod recipe;
 pub mod redact;
 pub mod run;
 pub mod runtime;
 pub mod safety;
 pub mod secrets;
+pub mod shortcuts;
 pub mod source;
 pub mod store;
 

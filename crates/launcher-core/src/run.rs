@@ -8,10 +8,14 @@ use crate::install::{ProjectLog, expand, spawn_pumps};
 use crate::paths::{AppPaths, ProjectPaths};
 use crate::problem::{FixAction, Problem, ProblemCode, Result};
 use crate::proc;
+use crate::procinfo;
 use crate::recipe::{AppKind, Recipe};
+use crate::store::{EndReason, RunRecord, Store};
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::watch;
@@ -47,6 +51,13 @@ enum Child {
 }
 
 impl Child {
+    fn pid(&self) -> Option<u32> {
+        match self {
+            Child::Piped(c, _) => c.id(),
+            Child::Pty(p) => p.pid(),
+        }
+    }
+
     async fn wait(&mut self) -> Option<i32> {
         match self {
             Child::Piped(c, _) => c.wait().await.ok().and_then(|s| s.code()),
@@ -81,6 +92,76 @@ type Urls = Arc<Mutex<Vec<String>>>;
 #[derive(Default, Clone)]
 pub struct Supervisor {
     running: Arc<Mutex<HashMap<String, Running>>>,
+    /// Where runs are recorded, so they can be found again after a crash.
+    store: Option<Arc<Store>>,
+    /// Set while the Launcher quits, so runs end as `app_quit` rather than `user_stop`.
+    quitting: Arc<AtomicBool>,
+}
+
+/// A project's command, ready to start: what [`Supervisor::launch`] runs, and what "open in my
+/// terminal" runs in the system's own terminal.
+pub struct Prepared {
+    pub program: PathBuf,
+    pub args: Vec<String>,
+    /// The whole command after placeholders were filled in, for the log.
+    pub argv: Vec<String>,
+    pub cwd: PathBuf,
+    pub env: Vec<(OsString, OsString)>,
+    pub port: Option<u16>,
+    /// The web page's path, e.g. `/` or `/lab?token=…`.
+    pub path: String,
+}
+
+/// Fills in the recipe's run command: picks a port, expands placeholders, resolves the
+/// program and builds the filtered environment with the project's keys.
+pub fn prepare(req: &LaunchRequest<'_>) -> Result<Prepared> {
+    let port = match &req.recipe.web {
+        Some(web) => Some(pick_port(web.preferred_port)?),
+        None => None,
+    };
+    let mut vars = vec![
+        ("{env}", req.project.env().to_string_lossy().into_owned()),
+        ("{src}", req.root.to_string_lossy().into_owned()),
+        ("{host}", "127.0.0.1".to_owned()),
+    ];
+    if let Some(p) = port {
+        vars.push(("{port}", p.to_string()));
+    }
+    vars.push(("{token}", uuid::Uuid::new_v4().simple().to_string()));
+    let run = &req.recipe.run;
+    let argv = proc::normalize_argv(
+        run.argv
+            .iter()
+            .map(|a| expand(a, &vars))
+            .chain(req.extra_args.iter().cloned())
+            .collect(),
+    );
+    let (program, args) = argv
+        .split_first()
+        .ok_or_else(|| Problem::internal("empty run command"))?;
+    let program: PathBuf = proc::resolve_program(program, req.root, req.tools);
+    let mut extra: BTreeMap<String, String> = run
+        .env
+        .iter()
+        .map(|(k, v)| (k.clone(), expand(v, &vars)))
+        .collect();
+    extra.extend(req.user_env.iter().map(|(k, v)| (k.clone(), v.clone())));
+    let env = project_env(req.app, req.project, &req.tools.path, &extra);
+    let path = req
+        .recipe
+        .web
+        .as_ref()
+        .map(|w| expand(&w.path, &vars))
+        .unwrap_or_else(|| "/".into());
+    Ok(Prepared {
+        args: args.to_vec(),
+        program,
+        cwd: req.root.join(&run.cwd),
+        env,
+        port,
+        path,
+        argv,
+    })
 }
 
 pub struct LaunchRequest<'a> {
@@ -98,6 +179,13 @@ pub struct LaunchRequest<'a> {
 }
 
 impl Supervisor {
+    pub fn new(store: Arc<Store>) -> Self {
+        Self {
+            store: Some(store),
+            ..Self::default()
+        }
+    }
+
     fn map(&self) -> std::sync::MutexGuard<'_, HashMap<String, Running>> {
         self.running.lock().unwrap_or_else(|e| e.into_inner())
     }
@@ -139,39 +227,16 @@ impl Supervisor {
             return Err(Problem::new(ProblemCode::AlreadyRunning));
         }
         let id = req.project_id.to_owned();
-        let port = match &req.recipe.web {
-            Some(web) => Some(pick_port(web.preferred_port)?),
-            None => None,
-        };
-        let mut vars = vec![
-            ("{env}", req.project.env().to_string_lossy().into_owned()),
-            ("{src}", req.root.to_string_lossy().into_owned()),
-            ("{host}", "127.0.0.1".to_owned()),
-        ];
-        if let Some(p) = port {
-            vars.push(("{port}", p.to_string()));
-        }
-        vars.push(("{token}", uuid::Uuid::new_v4().simple().to_string()));
-        let run = &req.recipe.run;
-        let argv = proc::normalize_argv(
-            run.argv
-                .iter()
-                .map(|a| expand(a, &vars))
-                .chain(req.extra_args.iter().cloned())
-                .collect(),
-        );
-        let (program, args) = argv
-            .split_first()
-            .ok_or_else(|| Problem::internal("empty run command"))?;
-        let program: PathBuf = proc::resolve_program(program, req.root, req.tools);
-        let mut extra: BTreeMap<String, String> = run
-            .env
-            .iter()
-            .map(|(k, v)| (k.clone(), expand(v, &vars)))
-            .collect();
-        extra.extend(req.user_env.iter().map(|(k, v)| (k.clone(), v.clone())));
-        let env = project_env(req.app, req.project, &req.tools.path, &extra);
-        let cwd = req.root.join(&run.cwd);
+        let Prepared {
+            program,
+            args,
+            argv,
+            cwd,
+            env,
+            port,
+            path,
+        } = prepare(&req)?;
+        let args = &args[..];
 
         // Watch the app's own output for the address it says it's serving on.
         let seen: Urls = Arc::default();
@@ -229,14 +294,9 @@ impl Supervisor {
             (Child::Piped(c, pumps), None)
         };
 
+        let run_id = self.record_start(&id, child.pid());
         let stop = CancellationToken::new();
         let (done_tx, done_rx) = watch::channel(None);
-        let path = req
-            .recipe
-            .web
-            .as_ref()
-            .map(|w| expand(&w.path, &vars))
-            .unwrap_or_else(|| "/".into());
         let offered = port.map(|p| format!("http://127.0.0.1:{p}{path}"));
         let url_slot: Arc<Mutex<Option<String>>> = Arc::default();
 
@@ -255,6 +315,7 @@ impl Supervisor {
         // The monitor task owns the child until it exits or is asked to stop.
         let sink = req.sink.clone();
         let monitor_id = id.clone();
+        let this = self.clone();
         tokio::spawn(async move {
             let (code, by_user) = tokio::select! {
                 code = child.wait() => (code, false),
@@ -269,6 +330,13 @@ impl Supervisor {
             } else {
                 RunState::Crashed
             };
+            let reason = match state {
+                _ if this.quitting.load(Ordering::Relaxed) => EndReason::AppQuit,
+                _ if by_user => EndReason::UserStop,
+                RunState::Stopped => EndReason::Exited,
+                _ => EndReason::Crashed,
+            };
+            this.record_end(run_id, code, reason);
             let _ = done_tx.send(Some(code));
             emit(&sink, &monitor_id, state, None, code);
         });
@@ -301,6 +369,7 @@ impl Supervisor {
             if let Ok(mut slot) = url_slot.lock() {
                 *slot = Some(url.clone());
             }
+            self.record_url(run_id, &url);
             emit(&req.sink, &id, RunState::Running, Some(url.clone()), None);
             let port = url_port(&url).or(port);
             return Ok(LaunchInfo {
@@ -312,12 +381,13 @@ impl Supervisor {
         // Terminal and desktop apps are "running" right away. Some still start a web page;
         // if one answers, surface it so the user gets an Open button.
         emit(&req.sink, &id, RunState::Running, None, None);
-        let (sink, id2) = (req.sink.clone(), id.clone());
+        let (sink, id2, this) = (req.sink.clone(), id.clone(), self.clone());
         tokio::spawn(async move {
             if let Ok(Some(url)) = probe.wait(Duration::from_secs(600)).await {
                 if let Ok(mut slot) = url_slot.lock() {
                     *slot = Some(url.clone());
                 }
+                this.record_url(run_id, &url);
                 emit(&sink, &id2, RunState::Running, Some(url), None);
             }
         });
@@ -336,9 +406,41 @@ impl Supervisor {
         }
     }
 
+    /// Stops everything because the Launcher is quitting.
     pub async fn stop_all(&self) {
+        self.quitting.store(true, Ordering::Relaxed);
         for id in self.running_ids() {
             self.stop(&id).await;
+        }
+    }
+
+    fn record_start(&self, project_id: &str, pid: Option<u32>) -> Option<i64> {
+        let store = self.store.as_ref()?;
+        let record = RunRecord {
+            id: 0,
+            project_id: project_id.to_owned(),
+            pid,
+            // Both kinds of child lead their own process group on POSIX.
+            pgid: if cfg!(unix) { pid } else { None },
+            proc_start_ms: pid.and_then(procinfo::start_time_ms),
+            boot_ms: procinfo::boot_time_ms(),
+            url: None,
+        };
+        store
+            .begin_run(&record)
+            .inspect_err(|p| tracing::warn!("recording run of {project_id}: {p}"))
+            .ok()
+    }
+
+    fn record_url(&self, run: Option<i64>, url: &str) {
+        if let (Some(store), Some(run)) = (&self.store, run) {
+            let _ = store.set_run_url(run, url);
+        }
+    }
+
+    fn record_end(&self, run: Option<i64>, code: Option<i32>, reason: EndReason) {
+        if let (Some(store), Some(run)) = (&self.store, run) {
+            let _ = store.end_run(run, code, reason);
         }
     }
 }
