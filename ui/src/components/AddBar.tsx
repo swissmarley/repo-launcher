@@ -6,17 +6,19 @@ import { ProblemNotice } from './ProblemNotice'
 
 interface Props {
   onAdd: (input: string) => Promise<Problem | null>
+  /** Handles a problem's fix; resolves true when adding should be tried again (signed in). */
+  onFix: (p: Problem) => Promise<boolean>
   autoFocus?: boolean
 }
 
-export function AddBar({ onAdd, autoFocus }: Props) {
+export function AddBar({ onAdd, onFix, autoFocus }: Props) {
   const { t } = useTranslation()
   const [value, setValue] = useState('')
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<Problem | null>(null)
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault()
+  const submit = async (e?: FormEvent) => {
+    e?.preventDefault()
     if (!value.trim() || busy) return
     setBusy(true)
     setProblem(null)
@@ -49,7 +51,13 @@ export function AddBar({ onAdd, autoFocus }: Props) {
       </form>
       {problem && (
         <div className="mt-3">
-          <ProblemNotice problem={problem} onDismiss={() => setProblem(null)} />
+          <ProblemNotice
+            problem={problem}
+            onFix={async () => {
+              if (await onFix(problem)) void submit()
+            }}
+            onDismiss={() => setProblem(null)}
+          />
         </div>
       )}
     </div>

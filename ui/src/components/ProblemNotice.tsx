@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import type { FixAction } from '../bindings/FixAction'
 import type { Problem } from '../bindings/Problem'
 import { Button } from './Button'
 
 interface Props {
   problem: Problem
-  onFix?: () => void
+  onFix?: (fix: FixAction) => void
   onDismiss?: () => void
 }
 
@@ -38,7 +39,7 @@ export function ProblemNotice({ problem, onFix, onDismiss }: Props) {
       {body && <p className="mt-1 text-muted">{body}</p>}
       <div className="mt-3 flex flex-wrap gap-2">
         {fixLabel && (
-          <Button variant="primary" onClick={onFix}>
+          <Button variant="primary" onClick={() => problem.fix && onFix?.(problem.fix)}>
             {fixLabel}
           </Button>
         )}

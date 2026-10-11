@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useReducer } from 'react'
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
+import type { EnvVarView } from '../bindings/EnvVarView'
 import type { Problem } from '../bindings/Problem'
+import type { SafetyReport } from '../bindings/SafetyReport'
 import type { ProjectStatus } from '../bindings/ProjectStatus'
 import type { RunState } from '../bindings/RunState'
 import type { Stage } from '../bindings/Stage'
 import type { StepLabel } from '../bindings/StepLabel'
 import { api, toProblem, type ProjectView } from '../lib/api'
 
-export type Busy = 'install' | 'launch' | 'stop' | 'remove' | 'update'
+export type Busy = 'review' | 'install' | 'launch' | 'stop' | 'remove' | 'update'
 export type Action = 'install' | 'launch' | 'update' | 'repair'
 
 export interface Live {
@@ -18,6 +20,21 @@ export interface Live {
   lastAction?: Action
   /** A short, non-error message such as "You have the latest version." */
   notice?: 'upToDate' | 'updated' | null
+}
+
+/** The safety gate waiting for the user's decision. */
+export interface Gate {
+  projectId: string
+  name: string
+  report: SafetyReport
+}
+
+/** The settings form; `thenLaunch` launches after saving. */
+export interface KeysForm {
+  projectId: string
+  name: string
+  vars: EnvVarView[]
+  thenLaunch: boolean
 }
 
 interface State {
@@ -101,7 +118,15 @@ export function useProjects() {
     }
   }, [])
 
-  const install = useCallback(
+  const [gate, setGate] = useState<Gate | null>(null)
+  const [keys, setKeys] = useState<KeysForm | null>(null)
+  const projectsRef = useRef(state.projects)
+  useEffect(() => {
+    projectsRef.current = state.projects
+  }, [state.projects])
+  const nameOf = (id: string) => projectsRef.current.find((p) => p.id === id)?.name ?? ''
+
+  const runInstall = useCallback(
     async (id: string) => {
       patch(id, { busy: 'install', problem: null, progress: undefined, lastAction: 'install' })
       dispatch({ type: 'status', id, status: 'installing' })
@@ -118,7 +143,42 @@ export function useProjects() {
     [patch, refresh],
   )
 
-  const launch = useCallback(
+  /** Install starts with the safety gate: download, show what will happen, then ask. */
+  const install = useCallback(
+    async (id: string) => {
+      patch(id, { busy: 'review', problem: null, progress: undefined, lastAction: 'install', notice: null })
+      let report: SafetyReport
+      try {
+        report = await api.reviewProject(id)
+      } catch (err) {
+        const problem = toProblem(err)
+        patch(id, { busy: undefined, progress: undefined, problem: problem.code === 'CANCELLED' ? null : problem })
+        return
+      }
+      patch(id, { busy: undefined, progress: undefined })
+      if (report.consented) return runInstall(id)
+      setGate({ projectId: id, name: nameOf(id), report })
+    },
+    [patch, runInstall],
+  )
+
+  const approveGate = useCallback(
+    async (trustOwner: boolean) => {
+      if (!gate) return
+      const { projectId, report } = gate
+      setGate(null)
+      try {
+        await api.consentProject(projectId, report.fingerprint, trustOwner)
+      } catch (err) {
+        patch(projectId, { problem: toProblem(err) })
+        return
+      }
+      await runInstall(projectId)
+    },
+    [gate, patch, runInstall],
+  )
+
+  const runLaunch = useCallback(
     async (id: string) => {
       patch(id, { busy: 'launch', problem: null, lastAction: 'launch' })
       try {
@@ -130,6 +190,55 @@ export function useProjects() {
       }
     },
     [patch],
+  )
+
+  const openKeys = useCallback(
+    async (id: string, thenLaunch: boolean) => {
+      try {
+        const vars = await api.envVars(id)
+        setKeys({ projectId: id, name: nameOf(id), vars, thenLaunch })
+      } catch (err) {
+        patch(id, { problem: toProblem(err) })
+      }
+    },
+    [patch],
+  )
+
+  /** The first launch shows the settings form once if the project asks for keys. */
+  const launch = useCallback(
+    async (id: string) => {
+      const p = projectsRef.current.find((x) => x.id === id)
+      if (p && !p.keysReviewed) {
+        const vars = await api.envVars(id).catch(() => [])
+        if (vars.some((v) => !v.hasValue)) {
+          setKeys({ projectId: id, name: p.name, vars, thenLaunch: true })
+          return
+        }
+      }
+      await runLaunch(id)
+    },
+    [runLaunch],
+  )
+
+  /** Saves the form's values; `null` entries clear a value, missing ones are left alone. */
+  const saveKeys = useCallback(
+    async (values: Record<string, string | null>, launchAfter: boolean): Promise<Problem | null> => {
+      if (!keys) return null
+      const id = keys.projectId
+      try {
+        for (const [name, value] of Object.entries(values)) {
+          await api.setEnvValue(id, name, value)
+        }
+        await api.markKeysReviewed(id)
+      } catch (err) {
+        return toProblem(err)
+      }
+      setKeys(null)
+      dispatch({ type: 'upsert', project: await api.getProject(id) })
+      if (launchAfter) await runLaunch(id)
+      return null
+    },
+    [keys, runLaunch],
   )
 
   const stop = useCallback(
@@ -164,13 +273,20 @@ export function useProjects() {
           await api.repairProject(id)
         }
       } catch (err) {
-        patch(id, { problem: toProblem(err) })
+        const problem = toProblem(err)
+        // The update changes what gets installed or run: ask again before going on.
+        if (problem.code === 'CONSENT_REQUIRED') {
+          patch(id, { busy: undefined, progress: undefined })
+          await refresh()
+          return install(id)
+        }
+        patch(id, { problem })
       } finally {
         patch(id, { busy: undefined, progress: undefined })
         await refresh()
       }
     },
-    [patch, refresh],
+    [patch, refresh, install],
   )
 
   const retry = useCallback(
@@ -185,6 +301,13 @@ export function useProjects() {
 
   return {
     ...state,
+    gate,
+    keys,
+    approveGate,
+    closeGate: () => setGate(null),
+    openKeys,
+    saveKeys,
+    closeKeys: () => setKeys(null),
     add,
     install,
     cancel: (id: string) => api.cancelInstall(id),

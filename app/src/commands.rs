@@ -1,8 +1,11 @@
 //! Thin adapters between the WebView and the engine. No business logic lives here.
 
 use crate::AppState;
+use launcher_core::engine::{AppSettings, EnvVarView};
 use launcher_core::recipe::AppKind;
 use launcher_core::run::LaunchInfo;
+use launcher_core::safety::SafetyReport;
+use launcher_core::source::auth::{DeviceCode, GitHubAccount, RemoteRepo};
 use launcher_core::{EngineEvent, EventSink, Problem, ProblemCode, Project};
 use serde::Serialize;
 use std::sync::Arc;
@@ -225,4 +228,121 @@ pub async fn uninstall_project(state: State<'_, AppState>, id: String) -> Result
 #[tauri::command]
 pub fn project_log(state: State<'_, AppState>, id: String) -> Vec<String> {
     state.engine.recent_log(&id, 500)
+}
+
+/// Downloads the project (nothing runs) and returns the safety gate's summary and signals.
+#[tauri::command]
+pub async fn review_project(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<SafetyReport> {
+    let token = begin_install(&state, &id)?;
+    let result = state.engine.review(&id, sink(&app), token).await;
+    end_install(&state, &id);
+    result
+}
+
+#[tauri::command]
+pub fn consent_project(
+    state: State<'_, AppState>,
+    id: String,
+    fingerprint: String,
+    trust_owner: bool,
+) -> Result<()> {
+    state.engine.consent(&id, &fingerprint, trust_owner)
+}
+
+#[tauri::command]
+pub fn env_vars(state: State<'_, AppState>, id: String) -> Result<Vec<EnvVarView>> {
+    state.engine.env_vars(&id)
+}
+
+// Commands that touch the keychain are async so a system keychain prompt never blocks the
+// app's main thread.
+#[tauri::command]
+pub async fn set_env_value(
+    state: State<'_, AppState>,
+    id: String,
+    name: String,
+    value: Option<String>,
+) -> Result<()> {
+    state.engine.set_env_value(&id, &name, value.as_deref())
+}
+
+#[tauri::command]
+pub fn mark_keys_reviewed(state: State<'_, AppState>, id: String) -> Result<()> {
+    state.engine.mark_keys_reviewed(&id)
+}
+
+#[tauri::command]
+pub async fn app_settings(state: State<'_, AppState>) -> Result<AppSettings> {
+    state.engine.settings()
+}
+
+#[tauri::command]
+pub fn set_trusted_publisher(
+    state: State<'_, AppState>,
+    owner: String,
+    trusted: bool,
+) -> Result<()> {
+    state.engine.set_trusted_publisher(&owner, trusted)
+}
+
+#[tauri::command]
+pub fn set_ai_enabled(state: State<'_, AppState>, enabled: bool) -> Result<()> {
+    state.engine.set_ai_enabled(enabled)
+}
+
+#[tauri::command]
+pub async fn set_ai_key(state: State<'_, AppState>, key: Option<String>) -> Result<()> {
+    state.engine.set_ai_key(key.as_deref())
+}
+
+#[tauri::command]
+pub async fn github_begin_sign_in(state: State<'_, AppState>) -> Result<DeviceCode> {
+    state.engine.github_begin_sign_in().await
+}
+
+/// Waits until the user approves the code on github.com (or cancels).
+#[tauri::command]
+pub async fn github_finish_sign_in(state: State<'_, AppState>) -> Result<GitHubAccount> {
+    let token = CancellationToken::new();
+    *state.sign_in.lock().unwrap_or_else(|e| e.into_inner()) = Some(token.clone());
+    let result = state.engine.github_finish_sign_in(token).await;
+    *state.sign_in.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    result
+}
+
+#[tauri::command]
+pub fn github_cancel_sign_in(state: State<'_, AppState>) {
+    if let Some(t) = state
+        .sign_in
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .take()
+    {
+        t.cancel();
+    }
+}
+
+/// Returns GitHub's page where access can also be revoked.
+#[tauri::command]
+pub async fn github_sign_out(state: State<'_, AppState>) -> Result<String> {
+    state.engine.github_sign_out()
+}
+
+#[tauri::command]
+pub async fn github_repositories(state: State<'_, AppState>) -> Result<Vec<RemoteRepo>> {
+    state.engine.github_repositories().await
+}
+
+/// Opens a web page in the user's browser: GitHub's sign-in page, "Where do I get this key?"
+/// links. Only https links are opened.
+#[tauri::command]
+pub fn open_external(app: AppHandle, url: String) -> Result<()> {
+    if !url.starts_with("https://") {
+        return Err(Problem::internal("only https links can be opened"));
+    }
+    open_in_browser(&app, &url)
 }

@@ -132,3 +132,52 @@ app's headless mode (also used by shortcuts) so keys never have to be written in
 `fixtures/corpus/` keeps each repo's file listing, its manifest files, and only the source lines
 detection reads (imports, app constructors, run instructions). Tests stay offline and fast, and
 we don't redistribute projects' source.
+
+### D-025 · GitHub sign-in needs only a public client ID — 2026-10-11
+The GitHub App's client ID comes from `REPO_LAUNCHER_GITHUB_CLIENT_ID`, the settings database
+(`rl config github-app`), or a value compiled into release builds, in that order. The device
+flow and refreshing device-flow tokens need no client secret, so none is created or shipped.
+Builds without a client ID still work for public projects and explain why sign-in is missing.
+
+### D-026 · Private repositories use the API; public ones never see the token — 2026-10-11
+A project is private when anonymous access can't see it but the user's token can. Only then is
+the token used: API metadata (Bearer), `info/refs` (Basic, user `x-access-token`) and the API
+tarball, which redirects to a short-lived codeload link (the HTTP client drops credentials on
+cross-host redirects). Public projects keep the quota-free anonymous paths even when the user
+is signed in. A 404 while signed out is `REPO_NOT_FOUND_OR_PRIVATE` with "Connect GitHub";
+while signed in it is `REPO_NOT_SHARED` with a link to choose repositories for the app.
+
+### D-027 · Keys are given to the running project only, not to install steps — 2026-10-11
+Values are read from the keychain at Launch and placed in that process's environment. Install
+steps run without them, so dependency install scripts never see the user's keys. If a project
+needs a key while installing (rare: e.g. a gated model download), its author can move that step
+to first run; we revisit if this blocks popular projects.
+
+### D-028 · The consent fingerprint covers what runs, from the project's own files — 2026-10-11
+`Recipe::fingerprint()` hashes the install steps, run command, runtimes and web settings, but not
+the list of keys a project asks for (a new optional key doesn't change what runs). Detection
+for the plan reads only files that came from the download (the sync manifest), so files created
+by installing (npm's `package-lock.json`) don't change the plan and re-trigger consent on
+Repair. Consent to an outdated fingerprint is refused.
+
+### D-029 · Trusted publishers skip the gate only when nothing is red — 2026-10-11
+"Trust projects from <owner>" removes the yellow-level friction entirely: with no red signals
+the install starts without the dialog. Red signals always show and always need typed
+confirmation, whoever published the project.
+
+### D-030 · Detected keys don't block a launch unless the code can't run without them — 2026-10-11
+Keys found by heuristics (`os.getenv`, `process.env`, `.env.example`) are optional: many projects
+support several providers and need only one. They are shown once, in a form before the first
+launch, with "Launch without them". Only keys a `launcher.json` marks `required`, or that the
+code reads with `os.environ["X"]` (which fails when missing), block a launch with `MISSING_KEYS`.
+
+### D-031 · One size limit for secrets on every OS — 2026-10-11
+Windows Credential Manager stores at most 2560 bytes per credential. We enforce that limit
+everywhere (`SECRET_TOO_LARGE`) so a key saved on a Mac also works on Windows, rather than
+splitting values across entries.
+
+### D-032 · Secrets are scrubbed where text is produced — 2026-10-11
+`Problem::detail` and `ProjectLog::line` scrub their input, so no caller can forget to. The
+scrubber knows every secret value the engine has handled this session plus common token
+formats. The live console hides known values on screen as a best effort (a value split across
+two reads can slip through on screen); its log file is always scrubbed per line.

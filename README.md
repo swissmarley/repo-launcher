@@ -4,8 +4,10 @@ Paste a link to a project on GitHub, click **Install**, then **Launch**. Repo La
 it, sets up everything it needs in its own private folder, and starts it: web projects open in
 your browser. You don't need git, Python, Node or a terminal, and public projects need no account.
 
-> Status: early development (Phase 2 of 5). Python, Node, Go and Docker Compose projects work
-> end to end, and projects can describe themselves with a [`launcher.json`](docs/LAUNCHER_JSON.md); see
+> Status: early development (Phase 3 of 5). Python, Node, Go and Docker Compose projects work
+> end to end, and projects can describe themselves with a [`launcher.json`](docs/LAUNCHER_JSON.md).
+> Private projects open after connecting GitHub, keys live only in the system keychain, and a
+> safety review comes before every first install ([docs/SECURITY.md](docs/SECURITY.md)). See
 > [docs/PLAN.md](docs/PLAN.md) for the roadmap and [docs/DECISIONS.md](docs/DECISIONS.md) for
 > why things are the way they are.
 

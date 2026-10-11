@@ -10,6 +10,8 @@ pub struct AppState {
     pub engine: Arc<Engine>,
     /// Cancellation handles for installs in progress, by project id.
     pub installs: Mutex<HashMap<String, CancellationToken>>,
+    /// Cancels a GitHub sign-in that is waiting for the user.
+    pub sign_in: Mutex<Option<CancellationToken>>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -27,6 +29,7 @@ pub fn run() {
             app.manage(AppState {
                 engine: Arc::new(engine),
                 installs: Mutex::default(),
+                sign_in: Mutex::default(),
             });
             Ok(())
         })
@@ -47,6 +50,21 @@ pub fn run() {
             commands::console_scrollback,
             commands::update_project,
             commands::repair_project,
+            commands::review_project,
+            commands::consent_project,
+            commands::env_vars,
+            commands::set_env_value,
+            commands::mark_keys_reviewed,
+            commands::app_settings,
+            commands::set_trusted_publisher,
+            commands::set_ai_enabled,
+            commands::set_ai_key,
+            commands::github_begin_sign_in,
+            commands::github_finish_sign_in,
+            commands::github_cancel_sign_in,
+            commands::github_sign_out,
+            commands::github_repositories,
+            commands::open_external,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build the app");

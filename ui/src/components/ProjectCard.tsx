@@ -1,6 +1,7 @@
 import { DropdownMenu } from 'radix-ui'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import type { Problem } from '../bindings/Problem'
 import type { ProjectView } from '../lib/api'
 import type { Live, Projects } from '../state/useProjects'
 import { ActivitySheet } from './ActivitySheet'
@@ -22,7 +23,7 @@ const dotColor: Record<StatusKey, string> = {
 }
 
 function statusOf(p: ProjectView, live: Live | undefined): StatusKey {
-  if (live?.busy === 'install' || live?.busy === 'update' || p.status === 'installing') return 'installing'
+  if (live?.busy === 'review' || live?.busy === 'install' || live?.busy === 'update' || p.status === 'installing') return 'installing'
   if (live?.busy === 'launch' || live?.runState === 'starting') return 'starting'
   if (p.running) return 'running'
   return p.status
@@ -32,7 +33,17 @@ function compact(n: number) {
   return new Intl.NumberFormat(undefined, { notation: 'compact' }).format(n)
 }
 
-export function ProjectCard({ project: p, live, actions }: { project: ProjectView; live?: Live; actions: Projects }) {
+export function ProjectCard({
+  project: p,
+  live,
+  actions,
+  onFix,
+}: {
+  project: ProjectView
+  live?: Live
+  actions: Projects
+  onFix: (p: Problem) => void
+}) {
   const { t } = useTranslation()
   const [activityOpen, setActivityOpen] = useState(false)
   const [removeOpen, setRemoveOpen] = useState(false)
@@ -40,13 +51,18 @@ export function ProjectCard({ project: p, live, actions }: { project: ProjectVie
   const installing = status === 'installing'
   const progress = live?.progress
 
-  const stepText = progress?.label
-    ? t(`step.${progress.label.kind}`, progress.label as Record<string, string>)
-    : progress
-      ? t(`stage.${progress.stage}`)
-      : t('stage.downloading')
+  const stepText =
+    live?.busy === 'review'
+      ? t('stage.reviewing')
+      : progress?.label
+        ? t(`step.${progress.label.kind}`, progress.label as Record<string, string>)
+        : progress
+          ? t(`stage.${progress.stage}`)
+          : t('stage.downloading')
 
-  const meta = [p.owner, p.stars != null ? `★ ${compact(p.stars)}` : null, p.license].filter(Boolean).join(' · ')
+  const meta = [p.owner, p.isPrivate ? t('project.private') : null, p.stars != null ? `★ ${compact(p.stars)}` : null, p.license]
+    .filter(Boolean)
+    .join(' · ')
 
   return (
     <article
@@ -89,7 +105,7 @@ export function ProjectCard({ project: p, live, actions }: { project: ProjectVie
       {live?.problem && (
         <ProblemNotice
           problem={live.problem}
-          onFix={() => actions.retry(p.id)}
+          onFix={() => live.problem && onFix(live.problem)}
           onDismiss={() => actions.dismissProblem(p.id)}
         />
       )}
@@ -123,6 +139,11 @@ export function ProjectCard({ project: p, live, actions }: { project: ProjectVie
               {p.owner && (
                 <DropdownMenu.Item disabled={installing} onSelect={() => actions.update(p.id)} className="cursor-default rounded-md px-3 py-2 outline-none data-disabled:opacity-50 data-highlighted:bg-sunken">
                   {t('action.checkUpdates')}
+                </DropdownMenu.Item>
+              )}
+              {p.status !== 'added' && (
+                <DropdownMenu.Item onSelect={() => actions.openKeys(p.id, false)} className="cursor-default rounded-md px-3 py-2 outline-none data-disabled:opacity-50 data-highlighted:bg-sunken">
+                  {t('action.keys')}
                 </DropdownMenu.Item>
               )}
               {p.status !== 'added' && (
@@ -169,7 +190,11 @@ function PrimaryAction({
   const { t } = useTranslation()
   switch (status) {
     case 'installing':
-      return <Button onClick={() => actions.cancel(p.id)}>{t('action.cancel')}</Button>
+      return (
+        <Button onClick={() => actions.cancel(p.id)} disabled={live?.busy === 'review' && !live.progress}>
+          {t('action.cancel')}
+        </Button>
+      )
     case 'added':
     case 'needsAttention':
       return (

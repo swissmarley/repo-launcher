@@ -40,13 +40,16 @@
     "close": "Close",
     "openConsole": "Open console",
     "checkUpdates": "Check for updates",
-    "repair": "Install again"
+    "repair": "Install again",
+    "keys": "Keys and settings",
+    "done": "Done"
   },
   "stage": {
     "downloading": "Downloading",
     "preparing": "Preparing",
     "installingHelpers": "Installing helpers",
-    "ready": "Ready"
+    "ready": "Ready",
+    "reviewing": "Checking what this project does…"
   },
   "step": {
     "setUpPython": "Setting up Python {{version}}",
@@ -79,7 +82,7 @@
     },
     "REPO_NOT_FOUND_OR_PRIVATE": {
       "title": "We couldn't find {{repo}}.",
-      "body": "The link may be mistyped, or the project may be private. Opening private projects will be possible after connecting your GitHub account."
+      "body": "The link may be mistyped, or the project may be private. If it's yours, connect your GitHub account to open it."
     },
     "RATE_LIMITED": {
       "title": "GitHub asked us to slow down.",
@@ -153,6 +156,58 @@
     "INTERNAL": {
       "title": "Something went wrong on our side.",
       "body": "Try again. If it keeps happening, copy the diagnostics and report it."
+    },
+    "KEYCHAIN_UNAVAILABLE": {
+      "title": "Repo Launcher can't save keys on this computer.",
+      "body": "It keeps keys only in your system's secure keychain, and none is available. On Linux, install and unlock a keyring such as GNOME Keyring or KWallet, then try again. Projects that don't need keys still work."
+    },
+    "SECRET_TOO_LARGE": {
+      "title": "That value is too long to save safely.",
+      "body": "Keys can be at most {{limit}} characters. Check that you pasted only the key itself."
+    },
+    "GITHUB_NOT_CONFIGURED": {
+      "title": "Connecting to GitHub isn't set up in this copy of Repo Launcher.",
+      "body": "Public projects work without it. To open private projects, use an official release of Repo Launcher."
+    },
+    "SIGN_IN_EXPIRED": {
+      "title": "The sign-in code expired.",
+      "body": "Codes last about 15 minutes. Start again to get a new one."
+    },
+    "SIGN_IN_DENIED": {
+      "title": "GitHub sign-in was cancelled.",
+      "body": "Nothing was connected. You can try again whenever you like."
+    },
+    "SIGNED_OUT": {
+      "title": "Your GitHub connection has expired.",
+      "body": "Connect GitHub again to keep using private projects."
+    },
+    "REPO_NOT_SHARED": {
+      "title": "We couldn't open {{repo}}.",
+      "body": "If it's a private project, Repo Launcher may not be allowed to see it yet. Choose it on GitHub, then try again."
+    },
+    "MISSING_KEYS": {
+      "title": "This project needs a few details first.",
+      "body": "Enter {{names}}, then launch it again."
+    },
+    "CONSENT_REQUIRED": {
+      "title": "Please review this project before it's installed.",
+      "body": "What it installs or runs has changed since you last agreed to it."
+    },
+    "AI_NOT_ENABLED": {
+      "title": "AI suggestions are turned off.",
+      "body": "You can turn them on in Settings."
+    },
+    "AI_KEY_MISSING": {
+      "title": "Add your Anthropic key to use AI suggestions.",
+      "body": "AI suggestions use your own Anthropic account. Add a key in Settings."
+    },
+    "AI_FAILED": {
+      "title": "The AI suggestion didn't work.",
+      "body": "The AI service didn't answer as expected. Check your key and connection, then try again."
+    },
+    "AI_INVALID_RECIPE": {
+      "title": "The AI suggestion couldn't be used.",
+      "body": "Its plan didn't pass Repo Launcher's safety checks, so nothing was run."
     }
   },
   "fix": {
@@ -160,7 +215,14 @@
     "install": "Install",
     "repair": "Install again",
     "checkConnection": "Try again",
-    "waitAndRetry": "Try again"
+    "waitAndRetry": "Try again",
+    "connectGithub": "Connect GitHub",
+    "chooseRepositories": "Choose projects on GitHub",
+    "enterKeys": "Enter details",
+    "reviewSafety": "Review",
+    "askAi": "Ask AI for a suggestion",
+    "openSettings": "Open settings",
+    "openUrl": "Open page"
   },
   "console": {
     "terminal": "Program output and input",
@@ -176,5 +238,156 @@
   "update": {
     "upToDate": "You have the latest version.",
     "updated": "Updated to the latest version."
+  },
+  "project": {
+    "private": "Private"
+  },
+  "github": {
+    "connect": "Connect GitHub"
+  },
+  "tabs": {
+    "label": "Views",
+    "library": "Library",
+    "yours": "Your GitHub projects"
+  },
+  "signIn": {
+    "title": "Connect GitHub",
+    "starting": "Getting a sign-in code…",
+    "instructions": "Copy this code, then paste it on the GitHub page that opens.",
+    "codeLabel": "Sign-in code",
+    "copyOpen": "Copy code and open GitHub",
+    "copiedOpen": "Copied. Opening GitHub…",
+    "waiting": "Waiting for you to approve on GitHub…",
+    "permissions": "Repo Launcher asks only to read the projects you choose. It can't change anything on GitHub.",
+    "connected": "You're connected as @{{login}}. You can now open your private projects."
+  },
+  "settings": {
+    "open": "Settings",
+    "title": "Settings",
+    "github": {
+      "heading": "GitHub",
+      "connectedAs": "Connected as @{{login}}.",
+      "chooseRepos": "Choose which projects Repo Launcher can see",
+      "disconnect": "Disconnect",
+      "why": "Connect only if you want to open private projects. Public projects never need it.",
+      "disconnected": "Disconnected from this computer.",
+      "revoke": "Also remove Repo Launcher's access on GitHub"
+    },
+    "trusted": {
+      "heading": "Trusted publishers",
+      "why": "Projects from these GitHub accounts skip the yellow warnings. Serious warnings are always shown.",
+      "remove": "Remove",
+      "none": "You haven't trusted anyone yet."
+    },
+    "ai": {
+      "heading": "AI suggestions",
+      "toggle": "Let AI suggest how to start projects Repo Launcher doesn't recognize",
+      "why": "Off by default. Uses your own Anthropic account. You'll see exactly what is sent before anything leaves your computer, and every suggestion is reviewed like any other project."
+    }
+  },
+  "safety": {
+    "title": "Before you install {{name}}",
+    "intro": "Installing runs this project's code on your computer, with the same access you have. Here's what will happen.",
+    "summaryHeading": "What this will do",
+    "redHeading": "Serious warnings",
+    "yellowHeading": "Worth knowing",
+    "showCommands": "Show the exact commands",
+    "honest": "These checks look for common warning signs. They can't prove a project is safe, so only install projects from people you trust.",
+    "trustOwner": "Trust projects from {{owner}}",
+    "trustOwnerHint": "Future projects from this account skip the yellow warnings.",
+    "typeToConfirm": "To install anyway, type {{word}}",
+    "installAnyway": "Install anyway",
+    "level": {
+      "red": "Serious warning",
+      "yellow": "Warning"
+    },
+    "summary": {
+      "download": "Download the project's files from GitHub.",
+      "downloadPrivate": "Download the project's files from GitHub using your connected account.",
+      "setUpPython": "Set up Python {{version}} just for this project.",
+      "setUpNode": "Set up Node.js {{version}} and {{packageManager}} just for this project.",
+      "setUpGo": "Set up the Go toolchain just for this project.",
+      "installHelpers": "Install the add-ons it lists in {{from}}.",
+      "openInBrowser": "Start it on your computer and open it in your web browser.",
+      "runInConsole": "Run it in a window inside Repo Launcher.",
+      "openWindow": "Start it as a desktop app.",
+      "useDocker": "Use Docker, which you already have, to build and run it.",
+      "needsProgram": "Use {{name}}, which must already be on your computer.",
+      "needsKeys": "Ask you for: {{names}}.",
+      "runSetupCommands_one": "Run 1 setup step from the project.",
+      "runSetupCommands_other": "Run {{count}} setup steps from the project."
+    },
+    "signal": {
+      "PIPE_TO_SHELL": {
+        "title": "Downloads and runs a script from the internet",
+        "body": "{{file}} fetches code from the web and runs it straight away, so what runs can change at any time."
+      },
+      "ELEVATION": {
+        "title": "Asks for administrator rights",
+        "body": "{{file}} uses a command that asks for full control of your computer. Repo Launcher never needs that."
+      },
+      "OBFUSCATED": {
+        "title": "Contains hidden code",
+        "body": "{{file}} runs code that is deliberately scrambled so people can't read it. This is common in malware."
+      },
+      "COMMITTED_EXECUTABLE": {
+        "title": "Runs a ready-made program file",
+        "body": "{{file}} is a program included in the project rather than built from its readable code, so it can't be checked."
+      },
+      "AI_SUGGESTED": {
+        "title": "This plan was suggested by AI",
+        "body": "The project's author didn't write these steps. Read them before agreeing."
+      },
+      "NEW_REPO": {
+        "title": "Very new project",
+        "body": "It was created {{days}} days ago."
+      },
+      "FEW_STARS": {
+        "title": "Few people use it",
+        "body": "It has {{stars}} stars on GitHub."
+      },
+      "NEW_OWNER": {
+        "title": "Brand-new GitHub account",
+        "body": "The account that published it is {{days}} days old."
+      },
+      "ARCHIVED": {
+        "title": "No longer maintained",
+        "body": "Its author has archived it, so problems won't be fixed."
+      },
+      "NO_LICENSE": {
+        "title": "No license",
+        "body": "The author hasn't said how the project may be used."
+      },
+      "INSTALL_SCRIPTS": {
+        "title": "Runs its own setup scripts",
+        "body": "{{file}} runs extra commands while it's being installed."
+      }
+    }
+  },
+  "keys": {
+    "title": "Keys and settings for {{name}}",
+    "titleBeforeLaunch": "{{name}} needs a few details",
+    "intro": "Keys are stored in your computer's secure keychain and given only to this project while it runs.",
+    "none": "This project doesn't ask for any keys or settings.",
+    "required": "Required",
+    "whereToGet": "Where do I get this?",
+    "savedPlaceholder": "Saved. Type to replace it.",
+    "clear": "Remove saved value",
+    "save": "Save",
+    "saveAndLaunch": "Save and launch",
+    "launchWithout": "Launch without them",
+    "notNow": "Not now",
+    "storage": "Repo Launcher never writes keys to files or logs.",
+    "kind": {
+      "apiKey": "{{service}} API key",
+      "token": "{{service}} access key"
+    }
+  },
+  "yours": {
+    "heading": "Projects you've shared with Repo Launcher",
+    "chooseRepos": "Choose projects on GitHub",
+    "loading": "Loading your projects…",
+    "empty": "No projects shared yet. Choose some on GitHub, then come back.",
+    "added": "Added"
   }
 }
