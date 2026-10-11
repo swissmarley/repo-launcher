@@ -30,6 +30,7 @@ CREATE TABLE projects (
 CREATE UNIQUE INDEX projects_source ON projects(source);
 "#];
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ProjectStatus {
@@ -58,6 +59,7 @@ impl ProjectStatus {
     }
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Project {
@@ -71,6 +73,7 @@ pub struct Project {
     pub ref_name: Option<String>,
     pub commit: Option<String>,
     pub subdir: Option<String>,
+    #[cfg_attr(feature = "ts", ts(type = "number | null"))]
     pub stars: Option<u64>,
     pub license: Option<String>,
     pub avatar_url: Option<String>,
@@ -78,7 +81,9 @@ pub struct Project {
     pub kind: Option<AppKind>,
     #[serde(skip)]
     pub recipe: Option<Recipe>,
+    #[cfg_attr(feature = "ts", ts(type = "number"))]
     pub created_at: i64,
+    #[cfg_attr(feature = "ts", ts(type = "number"))]
     pub updated_at: i64,
 }
 

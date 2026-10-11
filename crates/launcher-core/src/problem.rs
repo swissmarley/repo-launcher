@@ -5,6 +5,7 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fmt;
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ProblemCode {
@@ -29,6 +30,7 @@ pub enum ProblemCode {
     Internal,
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum FixAction {
@@ -36,11 +38,17 @@ pub enum FixAction {
     Install,
     Repair,
     CheckConnection,
-    WaitAndRetry { seconds: u64 },
+    WaitAndRetry {
+        #[cfg_attr(feature = "ts", ts(type = "number"))]
+        seconds: u64,
+    },
     InstallMacCommandLineTools,
-    OpenUrl { url: String },
+    OpenUrl {
+        url: String,
+    },
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Problem {

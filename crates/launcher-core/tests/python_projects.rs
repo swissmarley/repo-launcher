@@ -9,8 +9,13 @@ use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
 fn fixture(name: &str) -> String {
-    let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/synthetic").join(name);
-    std::fs::canonicalize(p).unwrap().to_string_lossy().into_owned()
+    let p = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/synthetic")
+        .join(name);
+    std::fs::canonicalize(p)
+        .unwrap()
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// Shares one data folder per test binary run so uv and Python download once.
@@ -43,9 +48,15 @@ async fn web_project_starts_responds_and_stops() {
 
     engine.stop(&id).await;
     assert!(!engine.is_running(&id));
-    assert!(reqwest::get(&url).await.is_err(), "server still answering after stop");
+    assert!(
+        reqwest::get(&url).await.is_err(),
+        "server still answering after stop"
+    );
     engine.uninstall(&id).await.unwrap();
-    assert!(!engine.paths().project(&id).root.exists(), "uninstall left files behind");
+    assert!(
+        !engine.paths().project(&id).root.exists(),
+        "uninstall left files behind"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -105,7 +116,9 @@ fn alive(pid: u32) -> bool {
         std::process::Command::new("ps")
             .args(["-p", &pid.to_string(), "-o", "stat="])
             .output()
-            .map(|o| o.status.success() && !String::from_utf8_lossy(&o.stdout).trim().starts_with('Z'))
+            .map(|o| {
+                o.status.success() && !String::from_utf8_lossy(&o.stdout).trim().starts_with('Z')
+            })
             .unwrap_or(false)
     }
 }

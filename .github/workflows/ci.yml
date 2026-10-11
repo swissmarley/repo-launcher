@@ -1,0 +1,87 @@
+# Kept deliberately lean (low Actions budget):
+#  - every push/PR: one Linux job for formatting, lints, unit tests, UI checks
+#  - pull requests to main + manual runs: the 3-OS matrix with real installs
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['docs/**', '**/*.md']
+  pull_request:
+    branches: [main]
+    paths-ignore: ['docs/**', '**/*.md']
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  quick:
+    name: Checks (Linux)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Rust format
+        run: cargo fmt --all --check
+      - name: Rust lints (engine + CLI)
+        run: cargo clippy -p launcher-core -p rl --all-targets -- -D warnings
+      - name: Rust unit tests
+        run: cargo test -p launcher-core -p rl
+      - name: TypeScript bindings are up to date
+        run: |
+          cargo test -p launcher-core --features ts --lib -q
+          git diff --exit-code -- ui/src/bindings
+      - name: UI typecheck, lint, tests
+        run: |
+          pnpm --filter ui typecheck
+          pnpm --filter ui lint
+          pnpm --filter ui test
+
+  platforms:
+    name: ${{ matrix.os }}
+    if: github.event_name != 'push'
+    needs: quick
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Linux WebView dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - run: pnpm install --frozen-lockfile
+      - name: Engine unit tests
+        run: cargo test -p launcher-core -p rl
+      - name: Install and launch fixture projects (managed uv + Python)
+        run: cargo test -p launcher-core --test python_projects -- --ignored --test-threads=1
+        env:
+          RL_TEST_HOME: ${{ runner.temp }}/rl-home
+      - name: Build the desktop app
+        run: pnpm tauri build --debug --no-bundle

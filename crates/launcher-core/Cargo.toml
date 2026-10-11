@@ -20,6 +20,7 @@ tokio = { version = "1.53.2", features = ["rt-multi-thread", "macros", "process"
 tokio-util = "0.7.20"
 toml = "1.1.8"
 tracing = "0.1.44"
+ts-rs = { version = "12", optional = true }
 url = "2.5.8"
 uuid = { version = "1.28.0", features = ["v4"] }
 zip = "9.0.1"
@@ -31,3 +32,7 @@ tokio = { version = "1.53.2", features = ["rt-multi-thread", "macros", "test-uti
 
 [target."cfg(windows)".dependencies]
 windows = { version = "0.62", features = ["Win32_System_Threading"] }
+
+[features]
+# Generates TypeScript bindings for the UI: `cargo test -p launcher-core --features ts`
+ts = ["dep:ts-rs"]

@@ -64,6 +64,29 @@ impl Engine {
         self.supervisor.history(id)
     }
 
+    /// The live run log if the project has run this session, else the newest log file on disk.
+    pub fn recent_log(&self, id: &str, max_lines: usize) -> Vec<String> {
+        let live = self.supervisor.history(id);
+        if !live.is_empty() {
+            return live.into_iter().rev().take(max_lines).rev().collect();
+        }
+        let logs = self.paths.project(id).logs();
+        let newest = ["run.log", "install.log"]
+            .iter()
+            .map(|f| logs.join(f))
+            .filter_map(|p| Some((std::fs::metadata(&p).ok()?.modified().ok()?, p)))
+            .max_by_key(|(t, _)| *t);
+        let Some((_, path)) = newest else {
+            return Vec::new();
+        };
+        let text = std::fs::read_to_string(path).unwrap_or_default();
+        let lines: Vec<&str> = text.lines().collect();
+        lines[lines.len().saturating_sub(max_lines)..]
+            .iter()
+            .map(|l| l.split_once("] ").map_or(*l, |(_, rest)| rest).to_owned())
+            .collect()
+    }
+
     /// Registers a project from a pasted link or local folder. Nothing is downloaded yet.
     /// Adding the same project twice returns the existing one.
     pub async fn add(&self, input: &str) -> Result<Project> {

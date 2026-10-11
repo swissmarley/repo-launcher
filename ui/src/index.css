@@ -1,0 +1,103 @@
+@import 'tailwindcss';
+
+/* Design tokens. Every color used by components comes from here so both themes stay in sync.
+   Contrast pairs (fg on bg, fg-muted on surface, accent-fg on accent) meet WCAG AA. */
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-sunken: #eef0f3;
+  --border: #dfe3e8;
+  --fg: #16181d;
+  --fg-muted: #5b6270;
+  --accent: #3b47d6;
+  --accent-hover: #3039bb;
+  --accent-fg: #ffffff;
+  --accent-soft: #e8eaff;
+  --success: #138a4b;
+  --warning: #9a5b00;
+  --danger: #c0262d;
+  --danger-soft: #fdeceb;
+  --focus: #3b47d6;
+  --shadow: 0 1px 2px rgb(16 24 40 / 0.06), 0 1px 3px rgb(16 24 40 / 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111317;
+    --surface: #1a1d23;
+    --surface-sunken: #14161b;
+    --border: #2c313a;
+    --fg: #eef0f4;
+    --fg-muted: #a3aab8;
+    --accent: #7f8cff;
+    --accent-hover: #98a2ff;
+    --accent-fg: #0d1030;
+    --accent-soft: #23284d;
+    --success: #4cc985;
+    --warning: #e6a948;
+    --danger: #ff7a7f;
+    --danger-soft: #3a1b1d;
+    --focus: #98a2ff;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-sunken: var(--surface-sunken);
+  --color-border: var(--border);
+  --color-fg: var(--fg);
+  --color-muted: var(--fg-muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --shadow-card: var(--shadow);
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', system-ui,
+    Cantarell, 'Noto Sans', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', 'Segoe UI Mono', 'DejaVu Sans Mono', monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  /* Desktop app, not a document: no rubber-band text selection on chrome. */
+  user-select: none;
+  cursor: default;
+}
+
+input,
+textarea,
+.selectable {
+  user-select: text;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

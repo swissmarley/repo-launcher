@@ -19,6 +19,7 @@ use tokio_util::sync::CancellationToken;
 const LOG_HISTORY: usize = 2000;
 const STOP_GRACE: Duration = Duration::from_secs(5);
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LaunchInfo {

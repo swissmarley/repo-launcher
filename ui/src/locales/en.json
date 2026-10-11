@@ -1,0 +1,152 @@
+{
+  "app": {
+    "title": "Repo Launcher"
+  },
+  "add": {
+    "label": "Link to a GitHub project",
+    "placeholder": "Paste a GitHub link, like github.com/owner/project",
+    "button": "Add",
+    "adding": "Looking it up…"
+  },
+  "empty": {
+    "title": "Run projects from GitHub — no setup needed",
+    "body": "Paste a link to a project on GitHub above. Repo Launcher downloads it, sets up everything it needs, and starts it for you."
+  },
+  "library": {
+    "heading": "Your projects"
+  },
+  "status": {
+    "added": "Not installed yet",
+    "installing": "Installing",
+    "installed": "Ready",
+    "needsAttention": "Needs attention",
+    "starting": "Starting",
+    "running": "Running"
+  },
+  "kind": {
+    "web": "Opens in your browser",
+    "terminal": "Runs in a window",
+    "gui": "Desktop app"
+  },
+  "action": {
+    "install": "Install",
+    "cancel": "Cancel",
+    "launch": "Launch",
+    "open": "Open",
+    "stop": "Stop",
+    "showActivity": "Show activity",
+    "remove": "Remove",
+    "more": "More actions for {{name}}",
+    "close": "Close"
+  },
+  "stage": {
+    "downloading": "Downloading",
+    "preparing": "Preparing",
+    "installingHelpers": "Installing helpers",
+    "ready": "Ready"
+  },
+  "step": {
+    "setUpPython": "Setting up Python {{version}}",
+    "createEnvironment": "Creating a private space for this project",
+    "installHelpers": "Installing what it needs",
+    "custom": "Finishing setup"
+  },
+  "remove": {
+    "title": "Remove {{name}}?",
+    "body": "This deletes the project and everything Repo Launcher installed for it. Anything the project saved inside its own folder is deleted too.",
+    "confirm": "Remove"
+  },
+  "activity": {
+    "title": "Activity for {{name}}",
+    "empty": "Nothing to show yet."
+  },
+  "problem": {
+    "copyDiagnostics": "Copy diagnostics",
+    "copied": "Copied",
+    "dismiss": "Dismiss",
+    "INVALID_LINK": {
+      "title": "That doesn't look like a GitHub link.",
+      "body": "Try something like github.com/streamlit/demo-uber-nyc-pickups."
+    },
+    "NOT_GITHUB": {
+      "title": "Repo Launcher works with projects on GitHub.",
+      "body": "Paste a link that starts with github.com."
+    },
+    "REPO_NOT_FOUND_OR_PRIVATE": {
+      "title": "We couldn't find {{repo}}.",
+      "body": "The link may be mistyped, or the project may be private. Opening private projects will be possible after connecting your GitHub account."
+    },
+    "RATE_LIMITED": {
+      "title": "GitHub asked us to slow down.",
+      "body": "Please try again in about {{minutes}} minutes."
+    },
+    "OFFLINE": {
+      "title": "You seem to be offline.",
+      "body": "Check your internet connection, then try again."
+    },
+    "DOWNLOAD_FAILED": {
+      "title": "The download didn't finish.",
+      "body": "This is usually temporary. Try again in a moment."
+    },
+    "DOWNLOAD_CORRUPT": {
+      "title": "A download was damaged on the way.",
+      "body": "We threw it away to keep your computer safe. Try again."
+    },
+    "UNSUPPORTED_PROJECT": {
+      "title": "Repo Launcher can't run this kind of project yet.",
+      "body": "It looks like a {{ecosystem}} project. Support for more kinds of projects is on the way."
+    },
+    "NO_ENTRY_POINT": {
+      "title": "We couldn't tell how to start this project.",
+      "body": "It may be a library or a collection of files rather than an app you can open."
+    },
+    "INSTALL_STEP_FAILED": {
+      "title": "Setup didn't finish.",
+      "body": "One of the setup steps stopped with an error. Trying again often helps. If it doesn't, copy the diagnostics and share them with the project's author."
+    },
+    "NEEDS_COMPILER": {
+      "title": "This project needs extra developer tools.",
+      "body": "It builds part of itself on your computer, which needs free tools from your system's maker. Install them, then try again."
+    },
+    "NOT_INSTALLED": {
+      "title": "This project isn't installed yet.",
+      "body": "Install it first, then launch it."
+    },
+    "ALREADY_RUNNING": {
+      "title": "It's already running.",
+      "body": "Use Open to see it, or Stop to close it."
+    },
+    "LAUNCH_FAILED": {
+      "title": "The project couldn't start.",
+      "body": "Installing it again usually fixes this."
+    },
+    "EXITED_EARLY": {
+      "title": "The project stopped right after starting.",
+      "body": "Check its activity to see what it said before stopping.",
+      "bodyModule": "It's missing a part called “{{module}}”. Installing it again usually fixes this."
+    },
+    "START_TIMEOUT": {
+      "title": "The project is taking a long time to start.",
+      "body": "It may still be getting ready. Stop it and try again if nothing happens."
+    },
+    "CANCELLED": {
+      "title": "Installation cancelled.",
+      "body": "You can install it again whenever you like."
+    },
+    "PROJECT_NOT_FOUND": {
+      "title": "That project isn't in your library anymore.",
+      "body": ""
+    },
+    "INTERNAL": {
+      "title": "Something went wrong on our side.",
+      "body": "Try again. If it keeps happening, copy the diagnostics and report it."
+    }
+  },
+  "fix": {
+    "retry": "Try again",
+    "install": "Install",
+    "repair": "Install again",
+    "checkConnection": "Try again",
+    "waitAndRetry": "Try again"
+  }
+}
