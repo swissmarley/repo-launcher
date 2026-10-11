@@ -1,5 +1,7 @@
 //! Credentials end to end, offline: GitHub sign-in and private repositories against a mock
 //! GitHub, and keys that reach the project but are never written to disk.
+// The launch test runs a shell script, so some imports are used on Unix only.
+#![cfg_attr(not(unix), allow(unused_imports))]
 
 use launcher_core::engine::EngineOptions;
 use launcher_core::events::{EngineEvent, EventSink, RunState, null_sink};
