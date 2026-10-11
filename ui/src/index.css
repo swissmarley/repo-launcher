@@ -101,3 +101,50 @@ textarea,
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Motion: short and calm. Dialogs and menus fade and settle in, new cards rise into place.
+   `prefers-reduced-motion` (above) turns all of it off. Radix sets `data-state`; Tailwind's
+   centering uses the `translate` property, so these animate `scale` and `opacity` only. */
+@keyframes rl-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes rl-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes rl-settle-in {
+  from {
+    opacity: 0;
+    scale: 0.97;
+  }
+}
+@keyframes rl-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.motion-overlay[data-state='open'] {
+  animation: rl-fade-in 160ms ease-out;
+}
+.motion-dialog[data-state='open'],
+.motion-sheet[data-state='open'] {
+  animation: rl-settle-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.motion-menu[data-state='open'] {
+  animation: rl-settle-in 120ms ease-out;
+  transform-origin: var(--radix-dropdown-menu-content-transform-origin);
+}
+.motion-overlay[data-state='closed'],
+.motion-dialog[data-state='closed'],
+.motion-sheet[data-state='closed'],
+.motion-menu[data-state='closed'] {
+  animation: rl-fade-out 120ms ease-in;
+}
+.motion-enter {
+  animation: rl-rise-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}

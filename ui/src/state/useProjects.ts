@@ -355,6 +355,24 @@ export function useProjects() {
     [state.live, launch, install, reinstall],
   )
 
+  /** A starter project: add it, then go straight to its review (the safety gate). */
+  const addAndReview = useCallback(
+    async (input: string): Promise<Problem | null> => {
+      let project: ProjectView
+      try {
+        project = await api.addProject(input)
+      } catch (err) {
+        return toProblem(err)
+      }
+      dispatch({ type: 'upsert', project })
+      // The review dialog is titled with the name before the next render updates the list.
+      projectsRef.current = [project, ...projectsRef.current.filter((p) => p.id !== project.id)]
+      void install(project.id)
+      return null
+    },
+    [install],
+  )
+
   return {
     ...state,
     gate,
@@ -365,6 +383,7 @@ export function useProjects() {
     saveKeys,
     closeKeys: () => setKeys(null),
     add,
+    addAndReview,
     install,
     cancel: (id: string) => api.cancelInstall(id),
     launch,

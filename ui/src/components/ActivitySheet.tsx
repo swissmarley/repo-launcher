@@ -2,6 +2,7 @@ import { Dialog } from 'radix-ui'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '../lib/api'
+import { useReturnFocus } from '../lib/useReturnFocus'
 import { Button } from './Button'
 
 const MAX_LINES = 2000
@@ -16,6 +17,7 @@ interface Props {
 /** Live output from installing and running a project. Hidden by default ("Show activity"). */
 export function ActivitySheet({ projectId, name, open, onOpenChange }: Props) {
   const { t } = useTranslation()
+  const returnFocus = useReturnFocus(open)
   const [lines, setLines] = useState<string[]>([])
   const bottom = useRef<HTMLDivElement>(null)
 
@@ -41,8 +43,8 @@ export function ActivitySheet({ projectId, name, open, onOpenChange }: Props) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/40" />
-        <Dialog.Content className="fixed inset-x-6 top-10 bottom-10 mx-auto flex max-w-4xl flex-col rounded-xl border border-border bg-surface shadow-card">
+        <Dialog.Overlay className="motion-overlay fixed inset-0 bg-black/40" />
+        <Dialog.Content onCloseAutoFocus={returnFocus} className="motion-sheet fixed inset-x-6 top-10 bottom-10 mx-auto flex max-w-4xl flex-col rounded-xl border border-border bg-surface shadow-card">
           <div className="flex items-center justify-between border-b border-border px-5 py-3">
             <Dialog.Title className="text-base font-semibold">{t('activity.title', { name })}</Dialog.Title>
             <Dialog.Close asChild>
@@ -55,7 +57,7 @@ export function ActivitySheet({ projectId, name, open, onOpenChange }: Props) {
               <p className="text-muted">{t('activity.empty')}</p>
             ) : (
               lines.map((line, i) => (
-                <div key={i} className="whitespace-pre-wrap break-all">
+                <div key={i} translate="no" className="whitespace-pre-wrap break-all">
                   {line}
                 </div>
               ))

@@ -8,14 +8,18 @@ import { KeysDialog } from './components/KeysDialog'
 import { ProblemNotice } from './components/ProblemNotice'
 import { ProjectCard } from './components/ProjectCard'
 import { QuitDialog } from './components/QuitDialog'
+import { RemoveAllDialog } from './components/RemoveAllDialog'
 import { SafetyDialog } from './components/SafetyDialog'
 import { SettingsDialog } from './components/SettingsDialog'
 import { SignInDialog } from './components/SignInDialog'
+import { UpdateBanner } from './components/UpdateBanner'
+import { Welcome } from './components/Welcome'
 import { YourProjects } from './components/YourProjects'
 import { api } from './lib/api'
 import { useAccount } from './state/useAccount'
 import { useProjects } from './state/useProjects'
 import { useShell } from './state/useShell'
+import { useUpdates } from './state/useUpdates'
 
 type Tab = 'library' | 'yours'
 
@@ -29,7 +33,11 @@ export default function App() {
   const empty = projects.loaded && projects.projects.length === 0
   const added = useMemo(() => new Set(projects.projects.map((p) => p.source)), [projects.projects])
   const showTabs = account.account != null
+  const updates = useUpdates()
   const [quitOpen, setQuitOpen] = useState(false)
+  /** Installing an update stops running projects, so it asks first like quitting. */
+  const [restartOpen, setRestartOpen] = useState(false)
+  const [removeAllOpen, setRemoveAllOpen] = useState(false)
   const [orphans, setOrphans] = useState<string[]>([])
   /** A shortcut's problem with no project card to show it on (a removed project). */
   const [shellProblem, setShellProblem] = useState<Problem | null>(null)
@@ -45,10 +53,16 @@ export default function App() {
     },
     onQuitRequested: () => setQuitOpen(true),
     onOrphans: setOrphans,
+    onUpdateAvailable: updates.found,
   })
   const platform = shell.settings?.platform ?? 'linux'
   const running = projects.projects.filter((p) => p.running)
   const nameOf = (id: string) => projects.projects.find((p) => p.id === id)?.name ?? id
+  const installUpdate = () => {
+    setSettingsOpen(false)
+    if (running.length > 0) setRestartOpen(true)
+    else void updates.install()
+  }
 
   /** Carries out a problem's suggested fix. Resolves true if the failed action should be retried. */
   const fix = useCallback(
@@ -92,7 +106,7 @@ export default function App() {
             {account.account ? (
               <span className="flex items-center gap-2 text-sm text-muted">
                 {account.account.avatarUrl && <img src={account.account.avatarUrl} alt="" className="size-6 rounded-full" />}
-                @{account.account.login}
+                <span translate="no">@{account.account.login}</span>
               </span>
             ) : (
               account.settings?.githubConfigured && (
@@ -136,6 +150,7 @@ export default function App() {
 
       <main className="flex-1 overflow-auto px-6 py-6">
         <div className="mx-auto max-w-5xl">
+          <UpdateBanner updates={updates} onInstall={installUpdate} />
           {shellProblem && (
             <div className="mb-4">
               <ProblemNotice problem={shellProblem} onDismiss={() => setShellProblem(null)} />
@@ -161,10 +176,7 @@ export default function App() {
               onFix={(p) => void fix(p)}
             />
           ) : empty ? (
-            <section className="mx-auto mt-16 max-w-md text-center">
-              <h2 className="text-2xl font-semibold">{t('empty.title')}</h2>
-              <p className="mt-3 text-muted">{t('empty.body')}</p>
-            </section>
+            <Welcome onTry={projects.addAndReview} />
           ) : (
             <section aria-labelledby="library-heading">
               <h2 id="library-heading" className="sr-only">
@@ -201,13 +213,32 @@ export default function App() {
         }}
         onFix={(p) => void fix(p, aiTarget?.projectId)}
       />
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} account={account} shell={shell} />
+      <SettingsDialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        account={account}
+        shell={shell}
+        updates={updates}
+        onInstallUpdate={installUpdate}
+        onRemoveAll={() => {
+          setSettingsOpen(false)
+          setRemoveAllOpen(true)
+        }}
+      />
       <QuitDialog
         running={running.map((p) => p.name)}
         open={quitOpen}
         onOpenChange={setQuitOpen}
         onConfirm={() => void api.quitApp()}
       />
+      <QuitDialog
+        purpose="update"
+        running={running.map((p) => p.name)}
+        open={restartOpen}
+        onOpenChange={setRestartOpen}
+        onConfirm={() => void updates.install()}
+      />
+      <RemoveAllDialog open={removeAllOpen} onOpenChange={setRemoveAllOpen} onConfirm={() => void api.removeAllData()} />
     </div>
   )
 }

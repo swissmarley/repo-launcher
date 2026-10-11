@@ -4,3 +4,5 @@ node_modules/
 /app/gen/
 *.part
 .DS_Store
+/ui/test-results/
+/ui/playwright-report/

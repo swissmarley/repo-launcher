@@ -15,6 +15,7 @@ import type { Preview } from '../bindings/Preview'
 import type { RemoteRepo } from '../bindings/RemoteRepo'
 import type { SafetyReport } from '../bindings/SafetyReport'
 import type { Shortcut } from '../bindings/Shortcut'
+import type { Starter } from '../bindings/Starter'
 import { mockEngine } from './mockEngine'
 
 export type ProjectView = Project & { running: boolean; url: string | null; shortcuts: Shortcut[] }
@@ -28,10 +29,21 @@ export type ShellMessage =
   | { type: 'quitRequested' }
   /** Projects left running when Repo Launcher closed unexpectedly; they were stopped. */
   | { type: 'orphans'; projectIds: string[] }
+  /** The daily check found a newer version of Repo Launcher. */
+  | { type: 'updateAvailable'; version: string }
 
 export interface ShellSettings {
   launchAtLogin: boolean
   platform: 'macos' | 'windows' | 'linux' | (string & {})
+}
+
+export interface UpdatesInfo {
+  /** This copy can update itself (official releases); other builds can't. */
+  configured: boolean
+  autoCheck: boolean
+  currentVersion: string
+  /** A newer version found by the last check, ready to install. */
+  available: string | null
 }
 
 export interface EngineApi {
@@ -86,6 +98,20 @@ export interface EngineApi {
   takeMessages(): Promise<ShellMessage[]>
   /** Stops every project and quits (after the user confirmed). */
   quitApp(): Promise<void>
+  /** The curated projects an empty library offers. */
+  starterProjects(): Promise<Starter[]>
+  /** The project's own icon as a `data:` URL, if it has one. */
+  projectIcon(id: string): Promise<string | null>
+  updatesInfo(): Promise<UpdatesInfo>
+  /** Resolves to the newer version, if there is one. */
+  checkForUpdate(): Promise<string | null>
+  /** Installs the update found by the last check and restarts (running projects stop). */
+  installUpdate(): Promise<void>
+  setAutoUpdateCheck(enabled: boolean): Promise<void>
+  /** Stops everything, removes shortcuts, keys, the login item and all files, then quits. */
+  removeAllData(): Promise<void>
+  /** Download progress of an update being installed, 0 to 1. */
+  onUpdateProgress(handler: (fraction: number) => void): Promise<() => void>
   onEvent(handler: (e: EngineEvent) => void): Promise<() => void>
   /** Called when the shell has new messages for `takeMessages`. */
   onShell(handler: () => void): Promise<() => void>
@@ -135,6 +161,14 @@ const tauriApi: EngineApi = {
   setLaunchAtLogin: (enabled) => invoke('set_launch_at_login', { enabled }),
   takeMessages: () => invoke('take_messages'),
   quitApp: () => invoke('quit_app'),
+  starterProjects: () => invoke('starter_projects'),
+  projectIcon: (id) => invoke('project_icon', { id }),
+  updatesInfo: () => invoke('updates_info'),
+  checkForUpdate: () => invoke('check_for_update'),
+  installUpdate: () => invoke('install_update'),
+  setAutoUpdateCheck: (enabled) => invoke('set_auto_update_check', { enabled }),
+  removeAllData: () => invoke('remove_all_data'),
+  onUpdateProgress: (handler) => listen<number>('update-progress', (e) => handler(e.payload)),
   onEvent: (handler) => listen<EngineEvent>('engine', (e) => handler(e.payload)),
   onShell: (handler) => listen('shell', () => handler()),
 }

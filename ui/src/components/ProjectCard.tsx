@@ -73,15 +73,19 @@ export function ProjectCard({
   return (
     <article
       aria-labelledby={`name-${p.id}`}
-      className="flex flex-col gap-4 rounded-xl border border-border bg-surface p-5 shadow-card"
+      className="motion-enter flex flex-col gap-4 rounded-xl border border-border bg-surface p-5 shadow-card"
     >
       <header className="flex items-start gap-4">
-        <ProjectIcon name={p.name} avatarUrl={p.avatarUrl} />
+        <ProjectIcon name={p.name} avatarUrl={p.avatarUrl} projectId={p.id} version={`${p.status}:${p.updatedAt}`} />
         <div className="min-w-0 flex-1">
-          <h3 id={`name-${p.id}`} className="truncate text-base font-semibold">
+          <h3 id={`name-${p.id}`} translate="no" className="truncate text-base font-semibold">
             {p.name}
           </h3>
-          {meta && <p className="truncate text-sm text-muted">{meta}</p>}
+          {meta && (
+            <p translate="no" className="truncate text-sm text-muted">
+              {meta}
+            </p>
+          )}
         </div>
         <span className="flex shrink-0 items-center gap-2 text-sm text-muted">
           <span aria-hidden className={`size-2.5 rounded-full ${dotColor[status]}`} />
@@ -89,7 +93,11 @@ export function ProjectCard({
         </span>
       </header>
 
-      {p.description && <p className="line-clamp-2 text-sm text-muted">{p.description}</p>}
+      {p.description && (
+        <p translate="no" className="line-clamp-2 text-sm text-muted">
+          {p.description}
+        </p>
+      )}
       {p.kind && !installing && <p className="text-xs text-muted">{t(`kind.${p.kind}`)}</p>}
 
       {installing && (
@@ -123,7 +131,8 @@ export function ProjectCard({
             {t('action.stop')}
           </Button>
         )}
-        <DropdownMenu.Root>
+        {/* Not modal: a modal menu hides the page from screen readers while its buttons stay focusable. */}
+        <DropdownMenu.Root modal={false}>
           <DropdownMenu.Trigger asChild>
             <Button variant="ghost" className="ml-auto" aria-label={t('action.more', { name: p.name })}>
               <span aria-hidden className="text-lg leading-none">
@@ -135,7 +144,7 @@ export function ProjectCard({
             <DropdownMenu.Content
               align="end"
               sideOffset={4}
-              className="min-w-44 rounded-lg border border-border bg-surface p-1 text-sm shadow-card"
+              className="motion-menu min-w-44 rounded-lg border border-border bg-surface p-1 text-sm shadow-card"
             >
               {p.kind === 'terminal' && !p.useSystemTerminal && (
                 <DropdownMenu.Item onSelect={() => actions.openConsole(p.id)} className="cursor-default rounded-md px-3 py-2 outline-none data-disabled:opacity-50 data-highlighted:bg-sunken">

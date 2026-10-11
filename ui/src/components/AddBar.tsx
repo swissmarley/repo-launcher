@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Problem } from '../bindings/Problem'
 import { Button } from './Button'
@@ -16,6 +16,12 @@ export function AddBar({ onAdd, onFix, autoFocus }: Props) {
   const [value, setValue] = useState('')
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<Problem | null>(null)
+  const input = useRef<HTMLInputElement>(null)
+
+  // `autoFocus` only works on mount; the library is known to be empty a moment later.
+  useEffect(() => {
+    if (autoFocus) input.current?.focus()
+  }, [autoFocus])
 
   const submit = async (e?: FormEvent) => {
     e?.preventDefault()
@@ -36,7 +42,7 @@ export function AddBar({ onAdd, onFix, autoFocus }: Props) {
         </label>
         <input
           id="add-input"
-          autoFocus={autoFocus}
+          ref={input}
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder={t('add.placeholder')}

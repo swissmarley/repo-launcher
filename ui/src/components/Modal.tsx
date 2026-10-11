@@ -1,5 +1,6 @@
 import { Dialog } from 'radix-ui'
 import type { ReactNode } from 'react'
+import { useReturnFocus } from '../lib/useReturnFocus'
 
 interface Props {
   open: boolean
@@ -14,12 +15,14 @@ interface Props {
 
 /** A centered dialog: title, scrollable body, actions at the bottom. */
 export function Modal({ open, onClose, title, description, children, footer, wide }: Props) {
+  const returnFocus = useReturnFocus(open)
   return (
     <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/40" />
+        <Dialog.Overlay className="motion-overlay fixed inset-0 bg-black/40" />
         <Dialog.Content
-          className={`fixed top-1/2 left-1/2 flex max-h-[calc(100vh-3rem)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-xl border border-border bg-surface shadow-card ${
+          onCloseAutoFocus={returnFocus}
+          className={`motion-dialog fixed top-1/2 left-1/2 flex max-h-[calc(100vh-3rem)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-xl border border-border bg-surface shadow-card ${
             wide ? 'w-[min(40rem,calc(100vw-2rem))]' : 'w-[min(30rem,calc(100vw-2rem))]'
           }`}
         >

@@ -4,18 +4,27 @@ import type { Problem } from '../bindings/Problem'
 import { api, toProblem } from '../lib/api'
 import type { Account } from '../state/useAccount'
 import type { Shell } from '../state/useShell'
+import type { Updates } from '../state/useUpdates'
 import { Button } from './Button'
 import { Modal } from './Modal'
 import { ProblemNotice } from './ProblemNotice'
+
+/** Where people get new versions of builds that can't update themselves. */
+const RELEASES_URL = 'https://github.com/swissmarley/repo-launcher/releases'
 
 interface Props {
   open: boolean
   onClose: () => void
   account: Account
   shell: Shell
+  updates: Updates
+  /** Installs the available update (asking first if projects are running). */
+  onInstallUpdate: () => void
+  /** Opens the "Remove all Repo Launcher data" confirmation. */
+  onRemoveAll: () => void
 }
 
-export function SettingsDialog({ open, onClose, account, shell }: Props) {
+export function SettingsDialog({ open, onClose, account, shell, updates, onInstallUpdate, onRemoveAll }: Props) {
   const { t } = useTranslation()
   const s = account.settings
   const [aiKey, setAiKey] = useState('')
@@ -72,6 +81,58 @@ export function SettingsDialog({ open, onClose, account, shell }: Props) {
           </label>
         </section>
 
+        <section aria-labelledby="settings-updates" className="flex flex-col gap-2">
+          <h3 id="settings-updates" className="font-semibold">
+            {t('updates.heading')}
+          </h3>
+          {updates.info && (
+            <p className="text-muted">
+              {t('updates.current', { version: updates.info.currentVersion })}
+            </p>
+          )}
+          {updates.info && !updates.info.configured ? (
+            <>
+              <p className="text-muted">{t('updates.notConfigured')}</p>
+              <div>
+                <Button onClick={() => api.openExternal(RELEASES_URL)}>{t('updates.releases')}</Button>
+              </div>
+            </>
+          ) : (
+            <>
+              {updates.problem && <ProblemNotice problem={updates.problem} onDismiss={updates.dismissProblem} />}
+              <div className="flex flex-wrap items-center gap-2">
+                {updates.available ? (
+                  <>
+                    <span role="status">{t('updates.ready', { version: updates.available })}</span>
+                    <Button variant="primary" onClick={onInstallUpdate} disabled={updates.progress != null}>
+                      {t('updates.install')}
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button onClick={() => void updates.check()} disabled={updates.checking}>
+                      {updates.checking ? t('updates.checking') : t('updates.check')}
+                    </Button>
+                    {updates.upToDate && <span role="status">{t('update.upToDate')}</span>}
+                  </>
+                )}
+              </div>
+              <label className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={updates.info?.autoCheck ?? true}
+                  onChange={(e) => run(() => updates.setAutoCheck(e.target.checked))}
+                />
+                <span>
+                  {t('updates.autoCheck')}
+                  <span className="block text-xs text-muted">{t('updates.why')}</span>
+                </span>
+              </label>
+            </>
+          )}
+        </section>
+
         <section aria-labelledby="settings-github" className="flex flex-col gap-2">
           <h3 id="settings-github" className="font-semibold">
             {t('settings.github.heading')}
@@ -118,7 +179,9 @@ export function SettingsDialog({ open, onClose, account, shell }: Props) {
             <ul className="flex flex-col divide-y divide-border rounded-lg border border-border">
               {s.trustedPublishers.map((owner) => (
                 <li key={owner} className="flex items-center justify-between px-3 py-2">
-                  <span className="font-mono">{owner}</span>
+                  <span translate="no" className="font-mono">
+                    {owner}
+                  </span>
                   <Button variant="ghost" onClick={() => run(() => api.setTrustedPublisher(owner, false))}>
                     {t('settings.trusted.remove')}
                   </Button>
@@ -188,6 +251,18 @@ export function SettingsDialog({ open, onClose, account, shell }: Props) {
               </button>
             </form>
           )}
+        </section>
+
+        <section aria-labelledby="settings-remove" className="flex flex-col gap-2 border-t border-border pt-5">
+          <h3 id="settings-remove" className="font-semibold">
+            {t('settings.removeAll.heading')}
+          </h3>
+          <p className="text-muted">{t('settings.removeAll.why')}</p>
+          <div>
+            <Button variant="danger" onClick={onRemoveAll}>
+              {t('settings.removeAll.open')}
+            </Button>
+          </div>
         </section>
       </div>
     </Modal>

@@ -38,7 +38,7 @@ function Signal({ signal }: { signal: RiskSignal }) {
       </p>
       <p className="mt-1 pl-4 text-muted">{t(`safety.signal.${signal.code}.body`, params)}</p>
       {params.line && (
-        <code className="selectable mt-2 ml-4 block overflow-x-auto rounded bg-surface px-2 py-1 font-mono text-xs whitespace-pre">
+        <code translate="no" className="selectable mt-2 ml-4 block overflow-x-auto rounded bg-surface px-2 py-1 font-mono text-xs whitespace-pre">
           {params.file ? `${params.file}: ` : ''}
           {params.line}
         </code>
@@ -111,7 +111,7 @@ export function SafetyDialog({ gate, onApprove, onCancel }: Props) {
             </ul>
             <details className="mt-3 text-sm">
               <summary className="cursor-pointer text-muted hover:text-fg">{t('safety.showCommands')}</summary>
-              <pre className="selectable mt-2 overflow-x-auto rounded-lg bg-sunken p-3 font-mono text-xs leading-relaxed">
+              <pre translate="no" className="selectable mt-2 overflow-x-auto rounded-lg bg-sunken p-3 font-mono text-xs leading-relaxed">
                 {report.commands.join('\n')}
               </pre>
             </details>

@@ -7,6 +7,7 @@ export interface ShellHandlers {
   onLaunchInUi: (projectId: string) => void
   onQuitRequested: () => void
   onOrphans: (projectIds: string[]) => void
+  onUpdateAvailable: (version: string) => void
 }
 
 /** The app shell around the window: starting at login, and what shortcuts and the tray ask for. */
@@ -39,6 +40,7 @@ export function useShell(handlers: ShellHandlers) {
         else if (m.type === 'launchInUi') h.onLaunchInUi(m.projectId)
         else if (m.type === 'quitRequested') h.onQuitRequested()
         else if (m.type === 'orphans') h.onOrphans(m.projectIds)
+        else if (m.type === 'updateAvailable') h.onUpdateAvailable(m.version)
       }
     }
     void drain()

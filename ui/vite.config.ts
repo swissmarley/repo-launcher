@@ -14,5 +14,7 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    // e2e/ holds the Playwright flows (`pnpm e2e`).
+    include: ['src/**/*.test.{ts,tsx}'],
   },
 })

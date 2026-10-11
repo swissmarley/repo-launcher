@@ -1,12 +1,14 @@
 // In-memory stand-in for the Rust engine, used in a plain browser and in UI tests.
 // Repo names pick scenarios: `missing`, `broken`, `*cli*`, `risky` (red signals),
-// `chat` (needs an API key), `private` (needs GitHub sign-in).
+// `chat` (needs an API key), `private` (needs GitHub sign-in). `?update` in the page address
+// pretends a newer Repo Launcher is available.
 import type { AppSettings } from '../bindings/AppSettings'
 import type { EngineEvent } from '../bindings/EngineEvent'
 import type { EnvVarView } from '../bindings/EnvVarView'
 import type { GitHubAccount } from '../bindings/GitHubAccount'
 import type { Problem } from '../bindings/Problem'
 import type { SafetyReport } from '../bindings/SafetyReport'
+import type { Starter } from '../bindings/Starter'
 import type { EngineApi, ProjectView, ShellMessage } from './api'
 
 const handlers = new Set<(e: EngineEvent) => void>()
@@ -23,6 +25,18 @@ let signInCancelled = false
 const aiPlans = new Set<string>()
 let launchAtLogin = false
 const shellMessages: ShellMessage[] = []
+const query = typeof window === 'undefined' ? new URLSearchParams() : new URLSearchParams(window.location.search)
+let autoUpdateCheck = true
+let updateAvailable: string | null = query.has('update') ? '0.2.0' : null
+if (updateAvailable) shellMessages.push({ type: 'updateAvailable', version: updateAvailable })
+
+const starters: Starter[] = [
+  { key: 'uberPickups', link: 'https://github.com/streamlit/demo-uber-nyc-pickups', owner: 'streamlit', avatarUrl: '', kind: 'web' },
+  { key: 'gradioHello', link: 'https://github.com/gradio-app/gradio/tree/main/demo/hello_world', owner: 'gradio-app', avatarUrl: '', kind: 'web' },
+  { key: 'viteReact', link: 'https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react', owner: 'vitejs', avatarUrl: '', kind: 'web' },
+  { key: 'astroBasics', link: 'https://github.com/withastro/astro/tree/main/examples/basics', owner: 'withastro', avatarUrl: '', kind: 'web' },
+  { key: 'cowsay', link: 'https://github.com/piuccio/cowsay', owner: 'piuccio', avatarUrl: '', kind: 'terminal' },
+]
 
 const emit = (e: EngineEvent) => handlers.forEach((h) => h(e))
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -109,9 +123,13 @@ export const mockEngine: EngineApi = {
 
   async addProject(input) {
     await sleep(300)
-    const m = input.trim().match(/^(?:https?:\/\/)?(?:www\.)?(?:github\.com\/)?([\w-]+)\/([\w.-]+?)(?:\.git)?\/?$/i)
+    const m = input
+      .trim()
+      .match(/^(?:https?:\/\/)?(?:www\.)?(?:github\.com\/)?([\w-]+)\/([\w.-]+?)(?:\.git)?(?:\/tree\/([\w./-]+))?\/?$/i)
     if (!m) fail({ code: 'INVALID_LINK', params: { input } })
-    const [, owner, repo] = m!
+    const [, owner, base, tree] = m!
+    // A project in a subfolder is named after the folder, as the engine does.
+    const repo = tree ? (tree.split('/').filter(Boolean).pop() ?? base) : base
     if (repo === 'missing') fail({ code: 'REPO_NOT_FOUND_OR_PRIVATE', params: { repo: `${owner}/${repo}` }, fix: { kind: 'connectGithub' } })
     const isPrivate = repo.includes('private')
     if (isPrivate && !account) {
@@ -193,7 +211,7 @@ export const mockEngine: EngineApi = {
     }
     emit({ type: 'progress', projectId: id, stage: 'ready', fraction: 1, label: null })
     p.status = 'installed'
-    p.kind = p.repo?.includes('cli') ? 'terminal' : 'web'
+    p.kind = p.repo?.includes('cli') || p.repo === 'cowsay' ? 'terminal' : 'web'
     return { ...p }
   },
 
@@ -395,6 +413,40 @@ export const mockEngine: EngineApi = {
   },
 
   async quitApp() {},
+
+  async starterProjects() {
+    return starters
+  },
+
+  async projectIcon() {
+    return null
+  },
+
+  async updatesInfo() {
+    return { configured: true, autoCheck: autoUpdateCheck, currentVersion: '0.1.0', available: updateAvailable }
+  },
+
+  async checkForUpdate() {
+    await sleep(400)
+    return updateAvailable
+  },
+
+  async installUpdate() {
+    await sleep(600)
+    updateAvailable = null
+  },
+
+  async setAutoUpdateCheck(enabled) {
+    autoUpdateCheck = enabled
+  },
+
+  async removeAllData() {
+    projects.clear()
+  },
+
+  async onUpdateProgress() {
+    return () => {}
+  },
 
   async onShell() {
     return () => {}

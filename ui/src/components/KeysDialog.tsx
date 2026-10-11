@@ -86,12 +86,19 @@ export function KeysDialog({ form, onSave, onClose }: Props) {
               <div key={v.name} className="flex flex-col gap-1">
                 <label htmlFor={id} className="flex items-baseline justify-between gap-2 text-sm font-medium">
                   <span>
-                    {labelOf(t, v)}
+                    {/* A label from the project itself, or the variable's name, isn't ours to translate. */}
+                    <span translate={v.label || !v.known ? 'no' : undefined}>{labelOf(t, v)}</span>
                     {v.required && <span className="ml-2 text-xs font-normal text-muted">{t('keys.required')}</span>}
                   </span>
-                  <span className="font-mono text-xs font-normal text-muted">{v.name}</span>
+                  <span translate="no" className="font-mono text-xs font-normal text-muted">
+                    {v.name}
+                  </span>
                 </label>
-                {v.description && <p className="text-xs text-muted">{v.description}</p>}
+                {v.description && (
+                  <p translate="no" className="text-xs text-muted">
+                    {v.description}
+                  </p>
+                )}
                 <input
                   id={id}
                   type={v.secret ? 'password' : 'text'}
