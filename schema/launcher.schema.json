@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/swissmarley/repo-launcher/main/schema/launcher.schema.json",
+  "title": "launcher.json",
+  "description": "Tells Repo Launcher how to install and run this project. See docs/LAUNCHER_JSON.md.",
+  "type": "object",
+  "required": ["version", "type", "run"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "const": 1, "description": "Schema version." },
+    "type": {
+      "enum": ["web", "terminal", "gui"],
+      "description": "web: opens in the browser. terminal: runs in the built-in console. gui: a desktop window."
+    },
+    "name": { "type": "string", "description": "Display name shown on the project card." },
+    "description": { "type": "string" },
+    "icon": { "type": "string", "description": "Repo-relative path to a PNG or SVG." },
+    "requires": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "python": { "type": "string", "description": "PEP 440 specifier, e.g. \">=3.10,<3.13\"." },
+        "node": { "type": "string", "description": "Version range, e.g. \">=20\"." },
+        "packageManager": { "type": "string", "description": "npm | pnpm | yarn | bun, optionally @version." },
+        "system": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Programs that must already be installed (checked, never installed), e.g. [\"ffmpeg\"]."
+        }
+      }
+    },
+    "install": {
+      "type": "array",
+      "description": "Ordered install steps. Each needs exactly one of run, python or node.",
+      "items": { "$ref": "#/$defs/step" }
+    },
+    "run": {
+      "type": "object",
+      "required": ["command"],
+      "additionalProperties": false,
+      "properties": {
+        "command": { "$ref": "#/$defs/argv" },
+        "cwd": { "type": "string" },
+        "env": { "$ref": "#/$defs/env" }
+      }
+    },
+    "web": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535, "description": "Preferred port; another is used if it's busy." },
+        "portEnv": { "type": "string", "description": "Environment variable that receives the port, e.g. PORT." },
+        "path": { "type": "string", "description": "Path opened in the browser. Default /." },
+        "readyTimeoutSeconds": { "type": "integer", "minimum": 1 },
+        "discover": { "type": "boolean", "description": "The app picks its own port; learn the address from its output." }
+      }
+    },
+    "env": {
+      "type": "array",
+      "description": "Settings the user provides, such as API keys. Stored in the OS keychain.",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+          "label": { "type": "string" },
+          "description": { "type": "string" },
+          "required": { "type": "boolean" },
+          "secret": { "type": "boolean", "default": true },
+          "helpUrl": { "type": "string", "format": "uri" }
+        }
+      }
+    },
+    "platforms": { "$ref": "#/$defs/platforms" },
+    "overrides": {
+      "type": "object",
+      "description": "Per-OS values deep-merged over the rest of this file.",
+      "additionalProperties": false,
+      "properties": {
+        "macos": { "type": "object" },
+        "windows": { "type": "object" },
+        "linux": { "type": "object" }
+      }
+    }
+  },
+  "$defs": {
+    "argv": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" },
+      "description": "Program and arguments; no shell. Placeholders: {port}, {host}, {env}, {src}, {token}."
+    },
+    "env": { "type": "object", "additionalProperties": { "type": "string" } },
+    "platforms": {
+      "type": "array",
+      "items": { "enum": ["macos", "windows", "linux"] }
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "description": "Shown to the user while the step runs." },
+        "run": { "$ref": "#/$defs/argv" },
+        "python": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requirements": { "type": "array", "items": { "type": "string" } },
+            "packages": { "type": "array", "items": { "type": "string" } },
+            "project": { "type": "boolean", "description": "Install the project itself (pip install -e .)." }
+          }
+        },
+        "node": { "type": "object", "additionalProperties": false, "description": "Install Node dependencies with the project's package manager." },
+        "cwd": { "type": "string" },
+        "env": { "$ref": "#/$defs/env" },
+        "platforms": { "$ref": "#/$defs/platforms" }
+      }
+    }
+  }
+}

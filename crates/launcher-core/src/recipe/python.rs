@@ -57,6 +57,7 @@ pub fn recipe(py: &PythonInfo) -> Result<Recipe, Problem> {
         EntryKind::Flask { .. } => &["flask"],
         EntryKind::FastApi { .. } => &["fastapi", "uvicorn"],
         EntryKind::Django => &["django"],
+        EntryKind::Notebooks => &["jupyterlab"],
         _ => &[],
     };
     let missing: Vec<&str> = needs
@@ -81,6 +82,7 @@ pub fn recipe(py: &PythonInfo) -> Result<Recipe, Problem> {
         source: RecipeSource::Heuristic,
         python: Some(version),
         node: None,
+        go: false,
         env_vars: Vec::new(),
         system_tools: Vec::new(),
         install,
@@ -162,6 +164,22 @@ fn run_for(
         EntryKind::Script => (AppKind::Terminal, run(&["python", file]), None),
         EntryKind::Module { module } => (AppKind::Terminal, run(&["python", "-m", module]), None),
         EntryKind::ConsoleScript { name } => (AppKind::Terminal, run(&[name]), None),
+        EntryKind::Notebooks => {
+            let r = run(&[
+                "python",
+                "-m",
+                "jupyterlab",
+                "--no-browser",
+                "--ServerApp.port={port}",
+                "--ServerApp.port_retries=0",
+                "--ServerApp.ip={host}",
+                // A fresh random token per launch; the address we open already carries it.
+                "--IdentityProvider.token={token}",
+            ]);
+            let mut w = web(8888).expect("web spec");
+            w.path = "/lab?token={token}".into();
+            (AppKind::Web, r, Some(w))
+        }
     }
 }
 

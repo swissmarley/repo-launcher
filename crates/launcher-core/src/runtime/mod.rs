@@ -50,6 +50,34 @@ pub fn bun_dir(paths: &AppPaths) -> PathBuf {
     paths.runtimes().join("bun").join(pins::BUN_VERSION)
 }
 
+pub fn go_dir(paths: &AppPaths) -> PathBuf {
+    paths.runtimes().join("go").join(pins::GO_VERSION)
+}
+
+/// Returns the folder of the managed Go toolchain, downloading it on first use.
+pub async fn ensure_go(
+    paths: &AppPaths,
+    http: &reqwest::Client,
+    cancel: &CancellationToken,
+    progress: impl FnMut(u64, Option<u64>),
+) -> Result<PathBuf> {
+    let dir = go_dir(paths);
+    if dir.join("bin").join(exe("go")).is_file() {
+        return Ok(dir);
+    }
+    let asset = pins::go().ok_or_else(unsupported_platform)?;
+    let url = format!("https://go.dev/dl/{}", asset.file);
+    let archive_path = fetch_asset(paths, http, &url, &asset, cancel, progress).await?;
+    let staging = dir.with_extension("partial");
+    let _ = tokio::fs::remove_dir_all(&staging).await;
+    let (a, s) = (archive_path.clone(), staging.clone());
+    blocking(move || archive::extract_any(&a, &s, true).map(|_| ())).await?;
+    let _ = tokio::fs::remove_dir_all(&dir).await;
+    tokio::fs::rename(&staging, &dir).await?;
+    let _ = tokio::fs::remove_file(&archive_path).await;
+    Ok(dir)
+}
+
 /// npm-installed tools put their launchers in `<prefix>/bin` (POSIX) or `<prefix>` (Windows).
 pub fn prefix_bin(prefix: &Path) -> PathBuf {
     if cfg!(windows) {

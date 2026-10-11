@@ -28,12 +28,22 @@ pub struct PythonInfo {
 pub enum EntryKind {
     Streamlit,
     Gradio,
-    Flask { app: String },
-    FastApi { app: String },
+    Flask {
+        app: String,
+    },
+    FastApi {
+        app: String,
+    },
     Django,
     Script,
-    Module { module: String },
-    ConsoleScript { name: String },
+    Module {
+        module: String,
+    },
+    ConsoleScript {
+        name: String,
+    },
+    /// Only notebooks to run: open them in JupyterLab.
+    Notebooks,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -76,7 +86,8 @@ const IGNORED_DIRS: &[&str] = &[
 pub fn detect(tree: &FileTree) -> Option<PythonInfo> {
     let has_marker = MARKERS.iter().any(|m| tree.has(m));
     let root_py = tree.files().any(|f| !f.contains('/') && f.ends_with(".py"));
-    if !has_marker && !root_py {
+    let notebooks = tree.files().any(|f| f.ends_with(".ipynb"));
+    if !has_marker && !root_py && !notebooks {
         return None;
     }
 
@@ -356,11 +367,14 @@ fn find_entries(tree: &FileTree, info: &PythonInfo, hints: &[String]) -> Vec<Ent
             && src.contains(".launch(")
         {
             Some(EntryKind::Gradio)
-        } else if let Some(var) = assigned_var(&src, "Flask(") {
-            Some(EntryKind::Flask {
-                app: format!("{}:{var}", module_path(f)),
-            })
-        } else if let Some(var) = assigned_var(&src, "FastAPI(") {
+        } else if let Some((var, in_factory)) = assigned_var(&src, "Flask(") {
+            let app = if in_factory {
+                module_path(f)
+            } else {
+                format!("{}:{var}", module_path(f))
+            };
+            Some(EntryKind::Flask { app })
+        } else if let Some((var, _)) = assigned_var(&src, "FastAPI(") {
             Some(EntryKind::FastApi {
                 app: format!("{}:{var}", module_path(f)),
             })
@@ -381,6 +395,13 @@ fn find_entries(tree: &FileTree, info: &PythonInfo, hints: &[String]) -> Vec<Ent
             });
         }
     }
+    if out.is_empty() && info.scripts.is_empty() && tree.files().any(|f| f.ends_with(".ipynb")) {
+        out.push(Entry {
+            file: String::new(),
+            kind: EntryKind::Notebooks,
+            score: 5,
+        });
+    }
     for name in &info.scripts {
         out.push(Entry {
             file: String::new(),
@@ -392,19 +413,26 @@ fn find_entries(tree: &FileTree, info: &PythonInfo, hints: &[String]) -> Vec<Ent
 }
 
 /// Finds `name = Flask(` style assignments and returns `name`.
-fn assigned_var(src: &str, ctor: &str) -> Option<String> {
+/// Finds `name = Flask(` style assignments. Returns the name and whether it was inside a
+/// function (an app factory such as `create_app()`), in which case the module alone is the
+/// right target: Flask looks for the factory itself.
+fn assigned_var(src: &str, ctor: &str) -> Option<(String, bool)> {
     src.lines().find_map(|line| {
         let (lhs, rhs) = line.split_once('=')?;
+        let indented = line.starts_with([' ', '\t']);
         let lhs = lhs.trim();
         let rhs = rhs.trim();
         let valid = !lhs.is_empty() && lhs.chars().all(|c| c.is_alphanumeric() || c == '_');
         (valid && (rhs.starts_with(ctor) || rhs.contains(&format!(".{ctor}"))))
-            .then(|| lhs.to_owned())
+            .then(|| (lhs.to_owned(), indented))
     })
 }
 
+/// `pkg/app.py` → `pkg.app`; a package's `__init__.py` is the package itself.
 fn module_path(file: &str) -> String {
-    file.trim_end_matches(".py").replace('/', ".")
+    file.trim_end_matches(".py")
+        .trim_end_matches("/__init__")
+        .replace('/', ".")
 }
 
 #[cfg(test)]

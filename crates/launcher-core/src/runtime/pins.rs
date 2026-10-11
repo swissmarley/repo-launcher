@@ -3,6 +3,7 @@
 
 pub const UV_VERSION: &str = "0.13.0";
 pub const BUN_VERSION: &str = "1.4.3";
+pub const GO_VERSION: &str = "1.27.2";
 
 /// Supported Node LTS lines, newest first. Projects asking for another version get the
 /// nearest pinned line.
@@ -146,6 +147,40 @@ pub fn bun() -> Option<Asset> {
     })
 }
 
+pub fn go() -> Option<Asset> {
+    let (file, sha256) = match os_arch() {
+        ("macos", "aarch64") => (
+            "go1.27.2.darwin-arm64.tar.gz",
+            "76812b213b1b2302c978d28fa52fa92d541704b9e7d9d5db8002c50e4018c4c5",
+        ),
+        ("macos", "x86_64") => (
+            "go1.27.2.darwin-amd64.tar.gz",
+            "587b59182488b23aa6e5fc25110405a3e0e5b38ed2f5b2f46ed13c32aee356fe",
+        ),
+        ("linux", "x86_64") => (
+            "go1.27.2.linux-amd64.tar.gz",
+            "ecbadb99091a3f46e31f5f934b068b1864eafa7995211b39eaddf76996045fe5",
+        ),
+        ("linux", "aarch64") => (
+            "go1.27.2.linux-arm64.tar.gz",
+            "94f3e30b8e374bc285e7dadc11e0865726b9bc6e85b841ccceaabc0214c6b7c8",
+        ),
+        ("windows", "x86_64") => (
+            "go1.27.2.windows-amd64.zip",
+            "1314008898bd40df77af4b014f777f08873dbdfbcd3d92308728ee03304fe04f",
+        ),
+        ("windows", "aarch64") => (
+            "go1.27.2.windows-arm64.zip",
+            "5c4b294f23b558619ae8a4aa94d023e3bca03f52c8398bb41b9026002b0013de",
+        ),
+        _ => return None,
+    };
+    Some(Asset {
+        file: file.into(),
+        sha256,
+    })
+}
+
 /// The pinned Node version for a requested major line (nearest supported line otherwise).
 pub fn node_version_for(major: Option<u32>) -> &'static str {
     let want = major.unwrap_or(NODE_DEFAULT_MAJOR);
@@ -186,5 +221,6 @@ mod tests {
         }
         assert!(uv().is_some());
         assert!(bun().is_some());
+        assert!(go().is_some());
     }
 }

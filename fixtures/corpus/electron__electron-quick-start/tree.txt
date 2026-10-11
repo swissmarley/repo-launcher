@@ -1,0 +1,13 @@
+.github/CODEOWNERS
+.github/dependabot.yml
+.github/workflows/add-to-project.yml
+.gitignore
+LICENSE.md
+README.md
+index.html
+main.js
+package-lock.json
+package.json
+preload.js
+renderer.js
+styles.css

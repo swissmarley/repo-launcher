@@ -79,8 +79,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Engine unit tests
         run: cargo test -p launcher-core -p rl
-      - name: Install and launch fixture projects (managed uv + Python)
-        run: cargo test -p launcher-core --test python_projects -- --ignored --test-threads=1
+      - name: Install and launch fixture projects (managed Python, Node, pnpm, Go)
+        run: cargo test -p launcher-core --test python_projects --test node_projects --test go_projects -- --ignored --test-threads=1
         env:
           RL_TEST_HOME: ${{ runner.temp }}/rl-home
       - name: Build the desktop app

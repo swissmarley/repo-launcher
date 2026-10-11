@@ -2,6 +2,8 @@
 //!
 //! Set `RL_HOME` to use a separate data folder (tests do this).
 
+mod corpus;
+
 use launcher_core::events::{EngineEvent, RunState};
 use launcher_core::{AppPaths, Engine, EventSink, Problem};
 use std::process::ExitCode;
@@ -15,7 +17,8 @@ const USAGE: &str = "usage:
   rl detect <folder>
   rl install <id>
   rl run <id> [--smoke]     --smoke: start, check it responds, stop
-  rl uninstall <id>";
+  rl uninstall <id>
+  rl corpus-sync <corpus.toml> <out-dir>   (development: refresh test snapshots)";
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -34,6 +37,10 @@ async fn main() -> ExitCode {
 
 async fn run(args: &[String]) -> Result<ExitCode, Problem> {
     let arg = |i: usize| args.get(i).map(String::as_str);
+    if let (Some("corpus-sync"), Some(list), Some(out)) = (arg(0), arg(1), arg(2)) {
+        corpus::sync(std::path::Path::new(list), std::path::Path::new(out)).await?;
+        return Ok(ExitCode::SUCCESS);
+    }
     if arg(0) == Some("detect") {
         let dir = arg(1).ok_or_else(usage)?;
         let tree = launcher_core::detect::FileTree::scan(std::path::Path::new(dir))?;

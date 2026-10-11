@@ -315,6 +315,16 @@ impl Engine {
             }
             tools.path.push(runtime::node_bin(&dir));
         }
+        if recipe.go {
+            let dir = match ctx {
+                Some(_) => {
+                    runtime::ensure_go(&self.paths, &self.http, &cancel, progress(0.20, None))
+                        .await?
+                }
+                None => runtime::go_dir(&self.paths),
+            };
+            tools.path.push(dir.join("bin"));
+        }
         if recipe.python.is_some() {
             if ctx.is_some() {
                 runtime::ensure_uv(&self.paths, &self.http, &cancel, progress(0.25, None)).await?;

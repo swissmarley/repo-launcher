@@ -1,0 +1,1 @@
+from httpie.cli.options import ParserSpec, Qualifiers

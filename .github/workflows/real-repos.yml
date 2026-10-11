@@ -1,0 +1,27 @@
+# Installs and launches real public GitHub projects on all three OSes. Slow and network-heavy,
+# so it only runs when started by hand (Actions → Real repos → Run workflow).
+name: Real repos
+
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  real-repos:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install and launch real projects
+        run: cargo test -p launcher-core --test real_repos -- --ignored --test-threads=1
+        env:
+          RL_TEST_HOME: ${{ runner.temp }}/rl-real

@@ -1,0 +1,11 @@
+	- [Micro npm Packages](https://github.com/parro-it/awesome-micro-npm-packages#readme)
+	- [Mad Science npm Packages](https://github.com/feross/awesome-mad-science#readme) - Impossible sounding projects that exist.
+	- [Maintenance Modules](https://github.com/maxogden/maintenance-modules#readme) - For npm packages.
+	- [npm scripts](https://github.com/RyanZim/awesome-npm-scripts#readme) - Task runner.
+- [Python](https://github.com/vinta/awesome-python#readme) - General-purpose programming language designed for readability.
+	- [Scientific Audio](https://github.com/faroit/awesome-python-scientific-audio#readme) - Scientific research in audio/music.
+	- [CircuitPython](https://github.com/adafruit/awesome-circuitpython#readme) - A version of Python for microcontrollers.
+	- [Data Science](https://github.com/krzjoa/awesome-python-data-science#readme) - Data analysis and machine learning.
+	- [Typing](https://github.com/typeddjango/awesome-python-typing#readme) - Optional static typing for Python.
+	- [MicroPython](https://github.com/mcauser/awesome-micropython#readme) - A lean and efficient implementation of Python 3 for microcontrollers.
+- [Java](https://github.com/akullpp/awesome-java#readme) - Popular secure object-oriented language designed for flexibility to "write once, run anywhere".

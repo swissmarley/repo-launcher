@@ -150,6 +150,14 @@ pub fn project_env(
     set("NUXT_TELEMETRY_DISABLED", "1".into());
     set("GATSBY_TELEMETRY_DISABLED", "1".into());
     set("BROWSER", "none".into());
+    // Go: module and build caches in the app folder; a newer toolchain a module asks for is
+    // fetched into that cache too.
+    set("GOPATH", cache.join("go").into());
+    set(
+        "GOMODCACHE",
+        cache.join("go").join("pkg").join("mod").into(),
+    );
+    set("GOCACHE", cache.join("go-build").into());
 
     for (k, v) in extra {
         env.insert(k.into(), v.into());

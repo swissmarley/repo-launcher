@@ -64,6 +64,7 @@ pub fn recipe(info: &NodeInfo) -> Result<Recipe, Problem> {
         source: RecipeSource::Heuristic,
         python: None,
         node: Some(node),
+        go: false,
         install,
         run,
         web,

@@ -97,3 +97,38 @@ equal.
 For example, `--browser.gatherUsageStats false` for Streamlit and `GRADIO_ANALYTICS_ENABLED=False`
 for Gradio. Users didn't knowingly opt in to the frameworks' telemetry, and this is the
 privacy-preserving default. A `launcher.json` can still set its own values.
+
+### D-018 · Framework dev servers are started directly, not through the package manager — 2026-10-11
+When a `dev` script is a single framework command (`vite`, `next dev`, `astro dev`…), we run that
+binary from `node_modules/.bin` and append our port/host flags. npm, pnpm and Yarn each forward
+extra arguments differently (`--` handling), so going through them would make port injection
+unreliable. Scripts that need a shell (`a && b`, `concurrently …`) run through the package
+manager with `PORT` set, and the real address is read from the app's output.
+
+### D-019 · Any HTTP answer means "ready" — 2026-10-11
+A web project counts as started as soon as its server answers at all, even with an error page.
+Example: Flask's tutorial returns an error until its database is initialized; showing that page
+(plus the activity log) helps the user more than waiting for a timeout.
+
+### D-020 · pnpm keeps its default of not running dependencies' install scripts — 2026-10-11
+pnpm 10 skips lifecycle scripts of dependencies unless a project allows them. That's the safer
+default and we keep it. npm projects still run them (npm's behavior); see SECURITY.md (Phase 3).
+
+### D-021 · Docker is used only if the user already has it — 2026-10-11
+Compose-only projects run `docker compose up --build` in the console when `docker` is found;
+otherwise the user is told the project needs Docker. We never install Docker: it needs admin
+rights and a background service, which is beyond "an app from an app store".
+
+### D-022 · Notebook servers get a fresh random token per launch — 2026-10-11
+JupyterLab is started with a new random token each time, and the address we open already
+includes it. Other programs on the computer can't use the notebook server without it.
+
+### D-023 · Terminal programs run in a pseudo-terminal in the built-in console — 2026-10-11
+Interactive prompts, colors and progress bars need a real terminal, so terminal projects use a
+PTY and an xterm.js console window. "Open in my system terminal" moves to Phase 4: it needs the
+app's headless mode (also used by shortcuts) so keys never have to be written into a script file.
+
+### D-024 · The test corpus stores reduced snapshots, not other people's code — 2026-10-11
+`fixtures/corpus/` keeps each repo's file listing, its manifest files, and only the source lines
+detection reads (imports, app constructors, run instructions). Tests stay offline and fast, and
+we don't redistribute projects' source.

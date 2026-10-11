@@ -3517,9 +3517,13 @@ name = "rl"
 version = "0.1.0"
 dependencies = [
  "launcher-core",
+ "reqwest",
+ "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "tokio-util",
+ "toml 1.1.8+spec-1.1.0",
 ]
 
 [[package]]

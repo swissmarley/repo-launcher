@@ -1,0 +1,1 @@
+from django.utils.regex_helper import _lazy_re_compile

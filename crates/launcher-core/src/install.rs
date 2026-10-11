@@ -201,7 +201,7 @@ pub async fn run_steps(ctx: &Context<'_>, recipe: &Recipe) -> Result<()> {
 
 async fn run_command(ctx: &Context<'_>, step: &Step, argv: &[String]) -> Result<()> {
     let vars = ctx.vars();
-    let argv: Vec<String> = argv.iter().map(|a| expand(a, &vars)).collect();
+    let argv = proc::normalize_argv(argv.iter().map(|a| expand(a, &vars)).collect());
     let (program, args) = argv
         .split_first()
         .ok_or_else(|| Problem::internal("empty step"))?;

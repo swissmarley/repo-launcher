@@ -149,6 +149,7 @@ pub fn parse(text: &str, report: &DetectionReport) -> Result<(Recipe, Display), 
         || m.install.iter().any(|s| s.node.is_some())
         || uses(&["node", "npm", "npx", "pnpm", "yarn", "bun"]);
 
+    let needs_go = uses(&["go"]);
     let python = needs_python.then(|| pyversion::choose(m.requires.python.as_deref(), None));
     let node = needs_node.then(|| node_spec(&m.requires, report));
 
@@ -191,6 +192,7 @@ pub fn parse(text: &str, report: &DetectionReport) -> Result<(Recipe, Display), 
         source: RecipeSource::Manifest,
         python,
         node,
+        go: needs_go,
         install,
         run,
         web,
@@ -399,6 +401,8 @@ mod tests {
             has_launcher_json: true,
             python: None,
             node: None,
+            go: None,
+            compose_file: None,
         }
     }
 

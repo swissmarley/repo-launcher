@@ -146,13 +146,15 @@ impl Supervisor {
         if let Some(p) = port {
             vars.push(("{port}", p.to_string()));
         }
+        vars.push(("{token}", uuid::Uuid::new_v4().simple().to_string()));
         let run = &req.recipe.run;
-        let argv: Vec<String> = run
-            .argv
-            .iter()
-            .map(|a| expand(a, &vars))
-            .chain(req.extra_args.iter().cloned())
-            .collect();
+        let argv = proc::normalize_argv(
+            run.argv
+                .iter()
+                .map(|a| expand(a, &vars))
+                .chain(req.extra_args.iter().cloned())
+                .collect(),
+        );
         let (program, args) = argv
             .split_first()
             .ok_or_else(|| Problem::internal("empty run command"))?;
@@ -227,7 +229,7 @@ impl Supervisor {
             .recipe
             .web
             .as_ref()
-            .map(|w| w.path.clone())
+            .map(|w| expand(&w.path, &vars))
             .unwrap_or_else(|| "/".into());
         let offered = port.map(|p| format!("http://127.0.0.1:{p}{path}"));
         let url_slot: Arc<Mutex<Option<String>>> = Arc::default();
@@ -364,9 +366,9 @@ impl Probe {
             // Prefer what the app printed: it may ignore the port we offered.
             candidates.extend(self.offered.clone());
             for url in candidates {
-                if let Ok(resp) = http.get(&url).send().await
-                    && resp.status().as_u16() < 500
-                {
+                // Any HTTP answer means the server is up. An error page (e.g. a database that
+                // still needs setting up) tells the user more in the browser than a timeout would.
+                if http.get(&url).send().await.is_ok() {
                     return Ok(Some(url));
                 }
             }

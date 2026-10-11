@@ -1,0 +1,1 @@
+from datasette.permissions import Resource

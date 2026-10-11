@@ -1,0 +1,1 @@
+from fastapi.dependencies.utils import get_typed_annotation

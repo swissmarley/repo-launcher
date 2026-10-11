@@ -1,0 +1,1 @@
+from django.test.runner import DiscoverRunner

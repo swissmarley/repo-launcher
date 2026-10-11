@@ -1,5 +1,6 @@
 //! Looks at a project's files and reports what it is. Pure: no network, no side effects.
 
+pub mod go;
 pub mod node;
 pub mod python;
 mod tree;
@@ -40,6 +41,9 @@ pub struct DetectionReport {
     pub has_launcher_json: bool,
     pub python: Option<python::PythonInfo>,
     pub node: Option<node::NodeInfo>,
+    pub go: Option<go::GoInfo>,
+    /// A Docker Compose file at the root, if any.
+    pub compose_file: Option<String>,
 }
 
 pub fn detect(tree: &FileTree) -> DetectionReport {
@@ -79,5 +83,15 @@ pub fn detect(tree: &FileTree) -> DetectionReport {
         has_launcher_json: has("launcher.json"),
         python,
         node,
+        go: go::detect(tree),
+        compose_file: [
+            "compose.yaml",
+            "compose.yml",
+            "docker-compose.yml",
+            "docker-compose.yaml",
+        ]
+        .into_iter()
+        .find(|f| has(f))
+        .map(str::to_owned),
     }
 }

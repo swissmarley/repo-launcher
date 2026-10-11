@@ -1,0 +1,5 @@
+from typing import Annotated
+from fastapi import FastAPI, Form
+from fastapi.testclient import TestClient
+from inline_snapshot import snapshot
+app = FastAPI()

@@ -37,6 +37,15 @@ impl FileTree {
         })
     }
 
+    /// A tree whose listing is given (e.g. a test snapshot) and whose readable files live under
+    /// `root`. Files in the listing but absent under `root` exist but can't be read.
+    pub fn from_parts(root: &Path, listing: impl IntoIterator<Item = String>) -> Self {
+        Self {
+            root: root.to_owned(),
+            files: listing.into_iter().collect(),
+        }
+    }
+
     pub fn root(&self) -> &Path {
         &self.root
     }

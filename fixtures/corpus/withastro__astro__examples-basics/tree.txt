@@ -1,0 +1,15 @@
+.codesandbox/Dockerfile
+.gitignore
+.vscode/extensions.json
+.vscode/launch.json
+README.md
+astro.config.mjs
+package.json
+public/favicon.ico
+public/favicon.svg
+src/assets/astro.svg
+src/assets/background.svg
+src/components/Welcome.astro
+src/layouts/Layout.astro
+src/pages/index.astro
+tsconfig.json

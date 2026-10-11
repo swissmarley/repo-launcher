@@ -120,6 +120,16 @@ pub fn strip_ansi(s: &str) -> String {
     out
 }
 
+/// Rewrites commands that need a different form in our environments: venvs made by uv have no
+/// `pip`, so `pip …` becomes `uv pip …`.
+pub fn normalize_argv(mut argv: Vec<String>) -> Vec<String> {
+    if matches!(argv.first().map(String::as_str), Some("pip" | "pip3")) {
+        argv[0] = "pip".into();
+        argv.insert(0, "uv".into());
+    }
+    argv
+}
+
 /// Resolves a recipe's first argv element to a concrete program: managed tools first, then
 /// project-local scripts, then anything on the tool path (venv, node_modules/.bin, runtimes).
 pub fn resolve_program(name: &str, root: &Path, tools: &crate::runtime::Tools) -> PathBuf {
@@ -154,6 +164,23 @@ pub fn resolve_program(name: &str, root: &Path, tools: &crate::runtime::Tools) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pip_goes_through_uv() {
+        let argv = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            normalize_argv(argv(&["pip", "install", "x"])),
+            argv(&["uv", "pip", "install", "x"])
+        );
+        assert_eq!(
+            normalize_argv(argv(&["pip3", "list"])),
+            argv(&["uv", "pip", "list"])
+        );
+        assert_eq!(
+            normalize_argv(argv(&["python", "x.py"])),
+            argv(&["python", "x.py"])
+        );
+    }
 
     #[test]
     fn strips_ansi() {

@@ -1,0 +1,6 @@
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from inline_snapshot import snapshot
+    app = FastAPI(separate_input_output_schemas=separate_input_output_schemas)
+    from pydantic import BaseModel, computed_field

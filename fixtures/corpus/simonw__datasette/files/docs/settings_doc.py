@@ -1,0 +1,1 @@
+    from datasette.app import DEFAULT_SETTINGS

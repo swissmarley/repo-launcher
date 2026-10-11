@@ -1,0 +1,2 @@
+import pytest
+from datasette.utils.check_callable import check_callable

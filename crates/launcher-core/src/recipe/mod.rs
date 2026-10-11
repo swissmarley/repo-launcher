@@ -131,6 +131,9 @@ pub struct Recipe {
     pub python: Option<String>,
     #[serde(default)]
     pub node: Option<NodeSpec>,
+    /// Needs the managed Go toolchain.
+    #[serde(default)]
+    pub go: bool,
     pub install: Vec<Step>,
     pub run: RunSpec,
     pub web: Option<WebSpec>,
@@ -183,31 +186,106 @@ pub fn resolve(
 /// Builds a recipe from heuristics. When a repo has both Python and Node, the one with a
 /// clear way to start wins; web apps beat command-line tools.
 pub fn from_detection(report: &DetectionReport) -> Result<Recipe, Problem> {
+    // PHP/Ruby apps often ship a JavaScript asset pipeline (Laravel + Vite). Running only that
+    // would show a blank asset server, so explain the real project type instead.
+    let server_lang = report
+        .ecosystems
+        .iter()
+        .any(|e| matches!(e, Ecosystem::Php | Ecosystem::Ruby));
+    if server_lang && report.node.is_some() && report.python.is_none() && report.go.is_none() {
+        return Err(unsupported(report));
+    }
     let py = report.python.as_ref().map(python::recipe);
     let js = report.node.as_ref().map(node::recipe);
+    let go = report.go.as_ref().map(go_recipe);
     let score = |r: &Option<Result<Recipe, Problem>>| match r {
         Some(Ok(r)) if r.kind == AppKind::Web => 3,
         Some(Ok(_)) => 2,
         Some(Err(_)) => 1,
         None => 0,
     };
-    let (py_score, js_score) = (score(&py), score(&js));
-    let best = if py_score == 0 && js_score == 0 {
-        None
-    } else if js_score > py_score {
-        js
-    } else {
-        py
-    };
+    let mut ranked = [(score(&py), py), (score(&js), js), (score(&go), go)];
+    // Stable: on ties Python, then Node, then Go keep their order.
+    ranked.sort_by_key(|r| std::cmp::Reverse(r.0));
+    let [(best_score, best), ..] = ranked;
+    let best = if best_score == 0 { None } else { best };
     match best {
         Some(Ok(r)) => Ok(r),
         Some(Err(p)) if p.code != ProblemCode::NoEntryPoint => Err(p),
-        _ => Err(unsupported(report)),
+        _ => docker_compose(report).ok_or_else(|| unsupported(report)),
     }
 }
 
+/// Builds a Go module's main package with the managed toolchain into the project's private
+/// folder (static build, so no C compiler is needed), then runs it in the console.
+fn go_recipe(info: &crate::detect::go::GoInfo) -> Result<Recipe, Problem> {
+    let pkg = info
+        .main_package
+        .clone()
+        .ok_or_else(|| Problem::new(ProblemCode::NoEntryPoint))?;
+    let exe = if cfg!(windows) {
+        format!("{}.exe", info.binary)
+    } else {
+        info.binary.clone()
+    };
+    let output = format!("{{env}}/bin/{exe}");
+    let mut build = Step::new(
+        StepLabel::BuildProject,
+        ["go", "build", "-o", &output, &pkg]
+            .map(String::from)
+            .to_vec(),
+    );
+    build.env.insert("CGO_ENABLED".into(), "0".into());
+    Ok(Recipe {
+        kind: AppKind::Terminal,
+        source: RecipeSource::Heuristic,
+        python: None,
+        node: None,
+        go: true,
+        install: vec![build],
+        run: RunSpec {
+            argv: vec![output],
+            cwd: ".".into(),
+            env: BTreeMap::new(),
+        },
+        web: None,
+        env_vars: Vec::new(),
+        system_tools: Vec::new(),
+    })
+}
+
+/// Projects described only by a Compose file run with Docker, if the user already has it
+/// (we never install Docker). Output shows in the console; any web address it prints is offered.
+fn docker_compose(report: &DetectionReport) -> Option<Recipe> {
+    let file = report.compose_file.as_ref()?;
+    let argv = ["docker", "compose", "-f", file, "up", "--build"]
+        .map(String::from)
+        .to_vec();
+    Some(Recipe {
+        kind: AppKind::Terminal,
+        source: RecipeSource::Heuristic,
+        python: None,
+        node: None,
+        go: false,
+        install: Vec::new(),
+        run: RunSpec {
+            argv,
+            cwd: ".".into(),
+            env: BTreeMap::new(),
+        },
+        web: None,
+        env_vars: Vec::new(),
+        system_tools: vec!["docker".into()],
+    })
+}
+
 fn unsupported(report: &DetectionReport) -> Problem {
-    let supported = [Ecosystem::Python, Ecosystem::Node];
+    let supported = [
+        Ecosystem::Python,
+        Ecosystem::Node,
+        Ecosystem::Go,
+        Ecosystem::Docker,
+    ];
     match report.ecosystems.iter().find(|e| !supported.contains(e)) {
         Some(e) => {
             Problem::new(ProblemCode::UnsupportedProject).param("ecosystem", format!("{e:?}"))

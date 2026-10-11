@@ -1,0 +1,5 @@
+The book introduces the core libraries essential for working with data in Python: particularly [IPython](http://ipython.org), [NumPy](http://numpy.org), [Pandas](http://pandas.pydata.org), [Matplotlib](http://matplotlib.org), [Scikit-Learn](http://scikit-learn.org), and related packages.
+The packages I used to run the code in the book are listed in [requirements.txt](requirements.txt) (Note that some of these exact version numbers may not be available on your platform: you may have to tweak them for your own use).
+To install the requirements using [conda](http://conda.pydata.org), run the following at the command-line:
+To create a stand-alone environment named ``PDSH`` with Python 3.5 and all the required package versions, run the following:
+$ conda create -n PDSH python=3.5 --file requirements.txt

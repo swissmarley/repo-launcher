@@ -1,0 +1,211 @@
+# Real public repos used to test detection and recipes. Each is pinned to a commit; snapshots
+# (file listing + manifests + the few source lines detection looks at) live in fixtures/corpus/.
+# Refresh snapshots with: cargo run -p rl -- corpus-sync fixtures/corpus.toml fixtures/corpus
+#
+# Expectations: `kind` + `run` (argv prefix) for runnable projects, or `problem` (a ProblemCode)
+# for ones we deliberately explain instead of running.
+
+# --- Python web apps ---------------------------------------------------------------------------
+[[repo]]
+url = "https://github.com/streamlit/demo-uber-nyc-pickups"
+commit = "62fa70f59da265450b97429e9bfae99b85bcacdd"
+kind = "web"
+run = ["python", "-m", "streamlit", "run", "streamlit_app.py"]
+
+[[repo]]
+url = "https://github.com/streamlit/llm-examples"
+commit = "7cf260745675e41f92e7436d3777aafdab9dad9f"
+kind = "web"
+run = ["python", "-m", "streamlit", "run", "Chatbot.py"]
+
+[[repo]]
+url = "https://github.com/streamlit/streamlit-example"
+commit = "8bd2197e4ba68dd68127a264dc6708f0a96f23c8"
+kind = "web"
+run = ["python", "-m", "streamlit", "run", "streamlit_app.py"]
+
+[[repo]]
+url = "https://github.com/pallets/flask/tree/main/examples/tutorial"
+commit = "d086db856be187255b8ec61ef409357393020f32"
+note = "app factory (create_app) inside a package; subfolder link"
+kind = "web"
+run = ["python", "-m", "flask", "--app", "flaskr", "run"]
+
+[[repo]]
+url = "https://github.com/gradio-app/gradio/tree/main/demo/hello_world"
+commit = "526c24340024dfae9c9a7709aad552382ed99f86"
+note = "no requirements file; gradio added automatically"
+kind = "web"
+run = ["python", "run.py"]
+
+[[repo]]
+url = "https://github.com/django/djangoproject.com"
+commit = "4b2a648aa6ed2f0681a4d777d0de7d812bdf8f26"
+kind = "web"
+run = ["python", "manage.py", "runserver"]
+
+[[repo]]
+url = "https://github.com/fastapi/full-stack-fastapi-template"
+commit = "7257e606cb94eada1dca40173e2b7f99dd549bc6"
+note = "Compose-only project: runs with Docker if installed"
+kind = "terminal"
+run = ["docker", "compose"]
+
+[[repo]]
+url = "https://github.com/jakevdp/PythonDataScienceHandbook"
+commit = "d66231454ef753818dc9213c9b5942e067266966"
+note = "notebooks only: JupyterLab with a per-launch token"
+kind = "web"
+run = ["python", "-m", "jupyterlab"]
+
+# --- Python command-line tools -----------------------------------------------------------------
+[[repo]]
+url = "https://github.com/httpie/cli"
+commit = "5b604c37c6c67e18e7c3e9aee6c88a8c22b98345"
+kind = "terminal"
+run = ["python", "-m", "httpie"]
+
+[[repo]]
+url = "https://github.com/psf/black"
+commit = "11cff1312bf96e02bce9a467d0b5a2dd65300642"
+kind = "terminal"
+run = ["black"]
+
+[[repo]]
+url = "https://github.com/yt-dlp/yt-dlp"
+commit = "897341241f2bfb2439fe0367f4c7c9ccd29a3828"
+kind = "terminal"
+run = ["python", "-m", "yt_dlp"]
+
+[[repo]]
+url = "https://github.com/tldr-pages/tldr-python-client"
+commit = "85eda9793fff693caf0b5c9099950b6b1aec9982"
+kind = "terminal"
+run = ["tldr"]
+
+[[repo]]
+url = "https://github.com/sherlock-project/sherlock"
+commit = "e40a45ec2a074b90703b3b4b842c8a3adbd6ada3"
+kind = "terminal"
+run = ["python", "-m", "sherlock_project"]
+
+[[repo]]
+url = "https://github.com/Textualize/rich-cli"
+commit = "46f4d2469097be395558768714a5f07ebccf1412"
+kind = "terminal"
+run = ["rich"]
+
+[[repo]]
+url = "https://github.com/simonw/datasette"
+commit = "cf113a59850862125b86ce1a58c117aa21341e07"
+note = "CLI that needs options (e.g. `serve`): console offers Run again with options"
+kind = "terminal"
+run = ["python", "-m", "datasette"]
+
+[[repo]]
+url = "https://github.com/tiangolo/fastapi"
+commit = "f5c6e9b4f9cadc1bf0f9a1fd672e621206b63007"
+note = "a library; its __main__ (the fastapi CLI) is the only runnable thing"
+kind = "terminal"
+run = ["python", "-m", "fastapi"]
+
+# --- Node web apps -----------------------------------------------------------------------------
+[[repo]]
+url = "https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react"
+commit = "3b72997d42e7dd2b31898d0e68461e3025e836b6"
+kind = "web"
+run = ["vite", "--port"]
+
+[[repo]]
+url = "https://github.com/withastro/astro/tree/main/examples/basics"
+commit = "9050e3819c51b0383cced278c278bc6f45c63468"
+kind = "web"
+run = ["astro", "dev", "--port"]
+
+[[repo]]
+url = "https://github.com/shadcn-ui/taxonomy"
+commit = "298a8857c7128a0d121e7f699dfd729f23b3966d"
+note = "dev script runs two commands: through pnpm, address discovered from output"
+kind = "web"
+run = ["pnpm", "run", "dev"]
+
+[[repo]]
+url = "https://github.com/nuxt/starter/tree/templates"
+commit = "1f391e58fa5f108d2b2bd98c1d604ca625f0290e"
+note = "branch holds template metadata, not an app"
+problem = "NO_ENTRY_POINT"
+
+[[repo]]
+url = "https://github.com/remix-run/react-router-templates/tree/main/default"
+commit = "067adb378a00a4c2ceb71934d5e8901d0e87c256"
+kind = "web"
+run = ["react-router", "dev", "--port"]
+
+[[repo]]
+url = "https://github.com/excalidraw/excalidraw"
+commit = "e65eca999e071503efb893d3379a29fb96ff37c4"
+note = "yarn monorepo; root start script delegates to the app package"
+kind = "web"
+run = ["yarn", "run", "start"]
+
+[[repo]]
+url = "https://github.com/docker/getting-started-app"
+commit = "6b025fc53bc7b9bef435d6b09bcd1da5a871c9cc"
+kind = "web"
+run = ["npm", "run", "dev"]
+
+# --- Node command-line tools and desktop apps --------------------------------------------------
+[[repo]]
+url = "https://github.com/piuccio/cowsay"
+commit = "eef317a302d025e3f31787566727c49eaee43648"
+kind = "terminal"
+run = ["node", "cli.js"]
+
+[[repo]]
+url = "https://github.com/google/zx"
+commit = "65fc542d88baac578967e22bea28cb610976578c"
+note = "CLI whose entry point exists only after its build step"
+kind = "terminal"
+run = ["node", "build/cli.js"]
+
+[[repo]]
+url = "https://github.com/electron/electron-quick-start"
+commit = "1e3a9803707b420fe8ee1ef0cceb5a7d1106c17a"
+kind = "gui"
+run = ["npm", "run", "start"]
+
+# --- Other ecosystems and non-apps -------------------------------------------------------------
+[[repo]]
+url = "https://github.com/sharkdp/bat"
+commit = "d9559c69f541873f8c47ac8ad81d985f4441edf6"
+note = "Rust: not yet supported (needs a system linker)"
+problem = "UNSUPPORTED_PROJECT"
+
+[[repo]]
+url = "https://github.com/junegunn/fzf"
+commit = "c0a193e031f01fb50bf6f7be4381990a3753f7cf"
+note = "Go CLI (built with the managed Go); its Gemfile is test tooling, not the app"
+kind = "terminal"
+run = ["{env}/bin/fzf"]
+
+[[repo]]
+url = "https://github.com/jekyll/jekyll"
+commit = "541d8b2ee75c8907de4744d4b87a7a6f1f997cae"
+problem = "UNSUPPORTED_PROJECT"
+
+[[repo]]
+url = "https://github.com/laravel/laravel"
+commit = "f4000aeb018fcbf71d4a13e3ee4b80c7e2d45be5"
+note = "PHP app with a Vite asset pipeline: explained, not mistaken for a Vite app"
+problem = "UNSUPPORTED_PROJECT"
+
+[[repo]]
+url = "https://github.com/sindresorhus/awesome"
+commit = "bc98e517ddca672f55f9857d714fc3ea3c3540b2"
+note = "a list, not an app"
+problem = "NO_ENTRY_POINT"
+
+[[repo]]
+url = "https://github.com/octocat/Hello-World"
+commit = "7fd1a60b01f91b314f59955a4e4d4e80d8edf11d"
+problem = "NO_ENTRY_POINT"

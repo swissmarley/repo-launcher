@@ -1,0 +1,1 @@
+from black.trans import iter_fexpr_spans

@@ -1,0 +1,10 @@
+lockfileVersion: '6.0'
+
+dependencies:
+  '@editorjs/code':
+    specifier: ^2.8.0
+    version: 2.8.0
+  '@editorjs/editorjs':
+    specifier: ^2.26.5
+    version: 2.26.5
+  '@editorjs/embed':

@@ -1,0 +1,16 @@
+.dockerignore
+.gitignore
+Dockerfile
+README.md
+app/app.css
+app/root.tsx
+app/routes.ts
+app/routes/home.tsx
+app/welcome/logo-dark.svg
+app/welcome/logo-light.svg
+app/welcome/welcome.tsx
+package.json
+public/favicon.ico
+react-router.config.ts
+tsconfig.json
+vite.config.ts
