@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Problem } from './bindings/Problem'
 import { AddBar } from './components/AddBar'
+import { AiDialog, type AiTarget } from './components/AiDialog'
 import { Button } from './components/Button'
 import { KeysDialog } from './components/KeysDialog'
 import { ProjectCard } from './components/ProjectCard'
@@ -21,6 +22,7 @@ export default function App() {
   const account = useAccount()
   const [tab, setTab] = useState<Tab>('library')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [aiTarget, setAiTarget] = useState<AiTarget | null>(null)
   const empty = projects.loaded && projects.projects.length === 0
   const added = useMemo(() => new Set(projects.projects.map((p) => p.source)), [projects.projects])
   const showTabs = account.account != null
@@ -37,7 +39,12 @@ export default function App() {
           await api.openExternal(f.url).catch(() => {})
           return false
         case 'openSettings':
+          setAiTarget(null)
+          void account.refresh()
           setSettingsOpen(true)
+          return false
+        case 'askAi':
+          if (projectId) setAiTarget({ projectId, name: projects.projects.find((p) => p.id === projectId)?.name ?? '' })
           return false
         case 'enterKeys':
           if (projectId) await projects.openKeys(projectId, true)
@@ -145,6 +152,16 @@ export default function App() {
       <SafetyDialog gate={projects.gate} onApprove={projects.approveGate} onCancel={projects.closeGate} />
       <KeysDialog key={projects.keys?.projectId ?? 'none'} form={projects.keys} onSave={projects.saveKeys} onClose={projects.closeKeys} />
       <SignInDialog signIn={account.signIn} onRetry={account.retrySignIn} onClose={account.closeSignIn} />
+      <AiDialog
+        key={aiTarget?.projectId ?? 'none'}
+        target={aiTarget}
+        onClose={() => setAiTarget(null)}
+        onReview={(id) => {
+          setAiTarget(null)
+          void projects.install(id)
+        }}
+        onFix={(p) => void fix(p, aiTarget?.projectId)}
+      />
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} account={account} />
     </div>
   )

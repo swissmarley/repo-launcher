@@ -203,7 +203,7 @@
     },
     "AI_FAILED": {
       "title": "The AI suggestion didn't work.",
-      "body": "The AI service didn't answer as expected. Check your key and connection, then try again."
+      "body": "The AI service didn't answer as expected. Check your key, your Anthropic account and your connection, then try again."
     },
     "AI_INVALID_RECIPE": {
       "title": "The AI suggestion couldn't be used.",
@@ -389,5 +389,22 @@
     "loading": "Loading your projects…",
     "empty": "No projects shared yet. Choose some on GitHub, then come back.",
     "added": "Added"
+  },
+  "ai": {
+    "title": "Ask AI how to start {{name}}",
+    "preparing": "Preparing what would be sent…",
+    "willSend": "This will be sent to Anthropic's {{model}} model using your own key:",
+    "fileNames_one": "the name of {{count}} file in the project",
+    "fileNames_other": "the names of the {{count}} files in the project",
+    "fileContents": "the contents of: {{files}} (shortened where long)",
+    "instructions": "instructions asking for a plan in Repo Launcher's format",
+    "neverSent": "Settings files such as .env, key files and anything that looks like a key are never sent.",
+    "showExact": "Show exactly what will be sent",
+    "afterwards": "Nothing runs yet. You'll review the suggested plan, marked as suggested by AI, before anything is installed.",
+    "send": "Send",
+    "sending": "Asking…",
+    "planReady": "AI suggested a plan for this project.",
+    "notRunnable": "AI doesn't think this project can be started as an app.",
+    "review": "Review the plan"
   }
 }

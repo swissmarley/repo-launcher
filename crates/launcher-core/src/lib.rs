@@ -3,6 +3,7 @@
 //! The engine has no UI dependency. The desktop app and the `rl` CLI are thin layers over
 //! [`Engine`].
 
+pub mod ai;
 pub mod console;
 pub mod detect;
 pub mod diagnose;

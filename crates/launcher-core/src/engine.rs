@@ -65,6 +65,15 @@ pub struct EnvVarView {
     pub value: Option<String>,
 }
 
+/// The result of asking AI: whether a plan was saved, and what the model said about the project.
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiOutcome {
+    pub recipe_saved: bool,
+    pub explanation: String,
+}
+
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -87,7 +96,6 @@ pub struct Engine {
     store: Store,
     vault: Vault,
     supervisor: Supervisor,
-    #[allow(dead_code)] // used by AI-assisted recipes
     anthropic_api: String,
     pending_sign_in: Mutex<Option<auth::Pending>>,
     /// Refreshing rotates the refresh token, so only one refresh may run at a time.
@@ -1016,6 +1024,62 @@ impl Engine {
                 .set(&self.store, secrets::ANTHROPIC_KEY, None, &Secret::new(k)),
             None => self.vault.delete(&self.store, secrets::ANTHROPIC_KEY),
         }
+    }
+
+    // --- AI-suggested recipes ----------------------------------------------------------------
+
+    /// Exactly what asking AI about this project would send. Needs the project's files (the
+    /// review step downloads them), AI turned on, and the user's Anthropic key.
+    pub fn ai_preview(&self, id: &str) -> Result<crate::ai::Preview> {
+        if !self.ai_enabled() {
+            return Err(Problem::new(ProblemCode::AiNotEnabled).fix(FixAction::OpenSettings));
+        }
+        if !self.store.has_secret(secrets::ANTHROPIC_KEY)? {
+            return Err(Problem::new(ProblemCode::AiKeyMissing).fix(FixAction::OpenSettings));
+        }
+        let project = self.store.get(id)?;
+        if !self.project_root(&project).is_dir() {
+            return Err(Problem::new(ProblemCode::NotInstalled).fix(FixAction::Install));
+        }
+        let label = match (&project.owner, &project.repo) {
+            (Some(o), Some(r)) => format!("{o}/{r}"),
+            _ => project.name.clone(),
+        };
+        Ok(crate::ai::preview(&label, &self.source_tree(&project)?))
+    }
+
+    /// Sends the previewed message (only if `digest` still matches what the user saw), checks
+    /// the answer with the launcher.json validator and saves it for the safety review.
+    pub async fn ai_suggest(&self, id: &str, digest: &str) -> Result<AiOutcome> {
+        let preview = self.ai_preview(id)?;
+        if preview.digest != digest {
+            return Err(Problem::new(ProblemCode::AiFailed)
+                .param("reason", "changed")
+                .fix(FixAction::AskAi));
+        }
+        let key = self
+            .vault
+            .get(secrets::ANTHROPIC_KEY)?
+            .ok_or_else(|| Problem::new(ProblemCode::AiKeyMissing).fix(FixAction::OpenSettings))?;
+        let answer = crate::ai::suggest(&self.http, &self.anthropic_api, &key, &preview).await?;
+        let Some(text) = answer.launcher_json else {
+            return Ok(AiOutcome {
+                recipe_saved: false,
+                explanation: answer.explanation,
+            });
+        };
+        let project = self.store.get(id)?;
+        let report = detect::detect(&self.source_tree(&project)?);
+        recipe::manifest::parse(&text, &report).map_err(|p| {
+            Problem::new(ProblemCode::AiInvalidRecipe).detail(p.detail.unwrap_or_default())
+        })?;
+        let meta = self.paths.project(id).meta();
+        std::fs::create_dir_all(&meta)?;
+        std::fs::write(meta.join(AI_RECIPE_FILE), text)?;
+        Ok(AiOutcome {
+            recipe_saved: true,
+            explanation: answer.explanation,
+        })
     }
 
     /// Deletes every keychain entry Repo Launcher created (full uninstall). Returns how many.

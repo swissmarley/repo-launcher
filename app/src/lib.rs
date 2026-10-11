@@ -65,6 +65,8 @@ pub fn run() {
             commands::github_sign_out,
             commands::github_repositories,
             commands::open_external,
+            commands::ai_preview,
+            commands::ai_suggest,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build the app");

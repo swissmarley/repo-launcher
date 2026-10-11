@@ -2,6 +2,7 @@
 // back to an in-memory mock so the interface can be developed and tested without Rust.
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import type { AiOutcome } from '../bindings/AiOutcome'
 import type { AppSettings } from '../bindings/AppSettings'
 import type { DeviceCode } from '../bindings/DeviceCode'
 import type { EngineEvent } from '../bindings/EngineEvent'
@@ -10,6 +11,7 @@ import type { GitHubAccount } from '../bindings/GitHubAccount'
 import type { LaunchInfo } from '../bindings/LaunchInfo'
 import type { Problem } from '../bindings/Problem'
 import type { Project } from '../bindings/Project'
+import type { Preview } from '../bindings/Preview'
 import type { RemoteRepo } from '../bindings/RemoteRepo'
 import type { SafetyReport } from '../bindings/SafetyReport'
 import { mockEngine } from './mockEngine'
@@ -53,6 +55,10 @@ export interface EngineApi {
   githubRepositories(): Promise<RemoteRepo[]>
   /** Opens an https page in the user's browser. */
   openExternal(url: string): Promise<void>
+  /** Exactly what asking AI about this project would send. */
+  aiPreview(id: string): Promise<Preview>
+  /** Sends the previewed message (`digest` must match) and saves a validated suggestion. */
+  aiSuggest(id: string, digest: string): Promise<AiOutcome>
   onEvent(handler: (e: EngineEvent) => void): Promise<() => void>
 }
 
@@ -90,6 +96,8 @@ const tauriApi: EngineApi = {
   githubSignOut: () => invoke('github_sign_out'),
   githubRepositories: () => invoke('github_repositories'),
   openExternal: (url) => invoke('open_external', { url }),
+  aiPreview: (id) => invoke('ai_preview', { id }),
+  aiSuggest: (id, digest) => invoke('ai_suggest', { id, digest }),
   onEvent: (handler) => listen<EngineEvent>('engine', (e) => handler(e.payload)),
 }
 

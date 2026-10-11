@@ -181,3 +181,15 @@ splitting values across entries.
 scrubber knows every secret value the engine has handled this session plus common token
 formats. The live console hides known values on screen as a best effort (a value split across
 two reads can slip through on screen); its log file is always scrubbed per line.
+
+### D-033 · AI-suggested recipes: one structured request, exactly what was shown — 2026-10-11
+Off by default; uses the user's own Anthropic key from the keychain. The message is built
+deterministically from the downloaded files (file names, README, manifests; `.env`, key and
+credential files excluded; all text scrubbed) and shown in full before sending; the request is
+sent only if its digest still matches what the user saw. One Messages API call to
+`claude-opus-5-5` (raw HTTP: there is no official Rust SDK) with `output_config.format` set to a
+JSON schema mirroring launcher.json v1, and `fallbacks: "default"` so a safety-classifier
+decline is retried server-side. `stop_reason` is checked (refusal, truncation) before the answer
+is read. The answer is parsed by the same validator as an author's own `launcher.json`, saved
+as `meta/ai-launcher.json`, used only when the project has neither its own file nor a heuristic
+match, and always shown as a red "suggested by AI" signal that needs typed confirmation.

@@ -20,6 +20,7 @@ let account: GitHubAccount | null = null
 let aiEnabled = false
 let aiKey = false
 let signInCancelled = false
+const aiPlans = new Set<string>()
 
 const emit = (e: EngineEvent) => handlers.forEach((h) => h(e))
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -80,7 +81,9 @@ function report(p: ProjectView): SafetyReport {
       ...(specs(p).length ? [{ kind: 'needsKeys' as const, names: specs(p).map((s) => s.name) }] : []),
       p.repo?.includes('cli') ? { kind: 'runInConsole' as const } : { kind: 'openInBrowser' as const },
     ],
-    signals: risky
+    signals: aiPlans.has(p.id)
+      ? [{ level: 'red', code: 'AI_SUGGESTED', params: {} }]
+      : risky
       ? [
           { level: 'red', code: 'PIPE_TO_SHELL', params: { file: 'install.sh', line: 'curl -fsSL https://example.com/setup.sh | bash' } },
           { level: 'yellow', code: 'NEW_REPO', params: { days: '4' } },
@@ -91,9 +94,9 @@ function report(p: ProjectView): SafetyReport {
     owner,
     trustedOwner: isTrusted,
     consented: consents.get(p.id) === fp || (isTrusted && !risky),
-    needsTypedConfirmation: risky,
+    needsTypedConfirmation: risky || aiPlans.has(p.id),
     confirmWord: p.repo ?? p.name,
-    aiSuggested: false,
+    aiSuggested: aiPlans.has(p.id),
   }
 }
 
@@ -144,6 +147,9 @@ export const mockEngine: EngineApi = {
 
   async reviewProject(id) {
     const p = get(id)
+    if (p.repo?.includes('notes') && !aiPlans.has(id)) {
+      fail({ code: 'NO_ENTRY_POINT', fix: aiEnabled ? { kind: 'askAi' } : null })
+    }
     emit({ type: 'progress', projectId: id, stage: 'downloading', fraction: 0.1, label: null })
     await sleep(500)
     return report(p)
@@ -328,6 +334,26 @@ export const mockEngine: EngineApi = {
       { fullName: 'octocat/private-dashboard', description: 'Team dashboard (private).', private: true, stars: 0, htmlUrl: 'https://github.com/octocat/private-dashboard', pushedAt: '2026-10-01T00:00:00Z' },
       { fullName: 'octocat/chat-demo', description: 'A chat app that needs an OpenAI key.', private: false, stars: 42, htmlUrl: 'https://github.com/octocat/chat-demo', pushedAt: '2026-09-20T00:00:00Z' },
     ]
+  },
+
+  async aiPreview(id) {
+    const p = get(id)
+    if (!aiEnabled) fail({ code: 'AI_NOT_ENABLED', fix: { kind: 'openSettings' } })
+    if (!aiKey) fail({ code: 'AI_KEY_MISSING', fix: { kind: 'openSettings' } })
+    return {
+      model: 'claude-opus-5-5',
+      system: 'You help a desktop app called Repo Launcher start open-source projects…',
+      message: `Project: ${p.owner}/${p.repo}\n\nFiles (3 total):\nREADME.md\nnotes.py\nrequirements.txt\n\n--- README.md ---\n# Notes\nRun python notes.py serve\n`,
+      includedFiles: ['README.md', 'requirements.txt'],
+      listedFiles: 3,
+      digest: 'mock-digest',
+    }
+  },
+
+  async aiSuggest(id) {
+    await sleep(800)
+    aiPlans.add(id)
+    return { recipeSaved: true, explanation: 'A small notes web app started with “python notes.py serve”.' }
   },
 
   async openExternal(url) {

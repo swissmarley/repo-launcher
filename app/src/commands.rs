@@ -1,7 +1,8 @@
 //! Thin adapters between the WebView and the engine. No business logic lives here.
 
 use crate::AppState;
-use launcher_core::engine::{AppSettings, EnvVarView};
+use launcher_core::ai::Preview;
+use launcher_core::engine::{AiOutcome, AppSettings, EnvVarView};
 use launcher_core::recipe::AppKind;
 use launcher_core::run::LaunchInfo;
 use launcher_core::safety::SafetyReport;
@@ -345,4 +346,20 @@ pub fn open_external(app: AppHandle, url: String) -> Result<()> {
         return Err(Problem::internal("only https links can be opened"));
     }
     open_in_browser(&app, &url)
+}
+
+/// Exactly what asking AI about this project would send.
+#[tauri::command]
+pub async fn ai_preview(state: State<'_, AppState>, id: String) -> Result<Preview> {
+    state.engine.ai_preview(&id)
+}
+
+/// Sends the previewed message; `digest` must match what the user saw.
+#[tauri::command]
+pub async fn ai_suggest(
+    state: State<'_, AppState>,
+    id: String,
+    digest: String,
+) -> Result<AiOutcome> {
+    state.engine.ai_suggest(&id, &digest).await
 }
