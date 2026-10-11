@@ -150,10 +150,10 @@ export default function App() {
       </main>
 
       <SafetyDialog gate={projects.gate} onApprove={projects.approveGate} onCancel={projects.closeGate} />
-      <KeysDialog key={projects.keys?.projectId ?? 'none'} form={projects.keys} onSave={projects.saveKeys} onClose={projects.closeKeys} />
+      <KeysDialog key={`keys-${projects.keys?.projectId ?? 'none'}`} form={projects.keys} onSave={projects.saveKeys} onClose={projects.closeKeys} />
       <SignInDialog signIn={account.signIn} onRetry={account.retrySignIn} onClose={account.closeSignIn} />
       <AiDialog
-        key={aiTarget?.projectId ?? 'none'}
+        key={`ai-${aiTarget?.projectId ?? 'none'}`}
         target={aiTarget}
         onClose={() => setAiTarget(null)}
         onReview={(id) => {
