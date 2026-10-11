@@ -65,10 +65,13 @@ impl Child {
 
     /// Lets output readers finish, without waiting forever on a lingering grandchild.
     async fn drain(&mut self) {
-        if let Child::Piped(_, pumps) = self {
-            for p in pumps.drain(..) {
-                let _ = tokio::time::timeout(Duration::from_secs(2), p).await;
+        match self {
+            Child::Piped(_, pumps) => {
+                for p in pumps.drain(..) {
+                    let _ = tokio::time::timeout(Duration::from_secs(2), p).await;
+                }
             }
+            Child::Pty(p) => p.drain().await,
         }
     }
 }

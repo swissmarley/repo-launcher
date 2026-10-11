@@ -56,9 +56,19 @@ pub struct PtyChild {
     pid: Option<u32>,
     killer: Box<dyn portable_pty::ChildKiller + Send + Sync>,
     exited: oneshot::Receiver<Option<i32>>,
+    /// Fires when the output reader has delivered everything the program printed.
+    output_done: Option<oneshot::Receiver<()>>,
 }
 
 impl PtyChild {
+    /// Waits briefly for the last output to be read, so it is delivered before the exit is
+    /// reported. Bounded: some terminals only signal end-of-output when the console closes.
+    pub async fn drain(&mut self) {
+        if let Some(rx) = self.output_done.take() {
+            let _ = tokio::time::timeout(Duration::from_secs(2), rx).await;
+        }
+    }
+
     pub async fn wait(&mut self) -> Option<i32> {
         (&mut self.exited).await.ok().flatten()
     }
@@ -163,6 +173,7 @@ pub fn spawn(
     });
 
     let (c, id) = (console.clone(), project_id.to_owned());
+    let (done_tx, output_done) = oneshot::channel();
     std::thread::spawn(move || {
         let mut buf = [0u8; 8192];
         let mut pending = Vec::new(); // incomplete UTF-8 sequence or partial line
@@ -215,6 +226,7 @@ pub fn spawn(
                 crate::proc::strip_ansi(&String::from_utf8_lossy(&line)),
             );
         }
+        let _ = done_tx.send(());
     });
 
     Ok((
@@ -223,6 +235,7 @@ pub fn spawn(
             pid,
             killer,
             exited,
+            output_done: Some(output_done),
         },
     ))
 }
