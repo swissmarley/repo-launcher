@@ -1,0 +1,10 @@
+{
+  "$schema": "../../../schema/launcher.schema.json",
+  "version": 1,
+  "type": "web",
+  "name": "Manifest Fixture",
+  "description": "Started from launcher.json, not heuristics.",
+  "requires": { "python": ">=3.11" },
+  "run": { "command": ["python", "-m", "http.server", "{port}", "--bind", "127.0.0.1"] },
+  "web": { "port": 8765 }
+}

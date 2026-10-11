@@ -57,6 +57,55 @@ pub fn extract_tar_gz(archive: &Path, dest: &Path, strip_top: bool) -> std::io::
     Ok(out)
 }
 
+/// Extracts a `.tar.gz` or `.zip` (chosen by file name).
+pub fn extract_any(archive: &Path, dest: &Path, strip_top: bool) -> std::io::Result<Extracted> {
+    let is_zip = archive
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("zip"));
+    if is_zip {
+        extract_zip(archive, dest, strip_top)
+    } else {
+        extract_tar_gz(archive, dest, strip_top)
+    }
+}
+
+pub fn extract_zip(archive: &Path, dest: &Path, strip_top: bool) -> std::io::Result<Extracted> {
+    let mut zip = zip::ZipArchive::new(std::fs::File::open(archive)?)?;
+    std::fs::create_dir_all(dest)?;
+    let mut out = Extracted::default();
+    for i in 0..zip.len() {
+        let mut f = zip.by_index(i)?;
+        // `enclosed_name` already refuses absolute and `..` paths; `safe_relative` adds stripping.
+        let Some(raw) = f.enclosed_name() else {
+            continue;
+        };
+        let Some(rel) = safe_relative(&raw, strip_top) else {
+            continue;
+        };
+        let target = dest.join(&rel);
+        if f.is_dir() {
+            std::fs::create_dir_all(&target)?;
+            continue;
+        }
+        if f.is_symlink() {
+            out.skipped_links += 1;
+            continue;
+        }
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut file = std::fs::File::create(&target)?;
+        std::io::copy(&mut f, &mut file)?;
+        #[cfg(unix)]
+        if let Some(mode) = f.unix_mode() {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&target, std::fs::Permissions::from_mode(mode & 0o755))?;
+        }
+        out.files += 1;
+    }
+    Ok(out)
+}
+
 /// Extracts one file (by its name, at any depth) from a `.tar.gz` or `.zip` runtime archive.
 pub fn extract_single(archive: &Path, wanted: &str, dest_file: &Path) -> std::io::Result<()> {
     if let Some(parent) = dest_file.parent() {

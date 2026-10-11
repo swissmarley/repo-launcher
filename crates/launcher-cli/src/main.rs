@@ -42,7 +42,7 @@ async fn run(args: &[String]) -> Result<ExitCode, Problem> {
             "{}",
             serde_json::to_string_pretty(&report).unwrap_or_default()
         );
-        match launcher_core::recipe::from_detection(&report) {
+        match launcher_core::recipe::resolve(&tree, &report).map(|(r, _)| r) {
             Ok(r) => println!("{}", serde_json::to_string_pretty(&r).unwrap_or_default()),
             Err(p) => println!("no recipe: {p}"),
         }

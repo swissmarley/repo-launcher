@@ -120,20 +120,32 @@ pub fn strip_ansi(s: &str) -> String {
     out
 }
 
-/// Resolves a recipe's first argv element to a concrete program.
-pub fn resolve_program(name: &str, src: &Path, venv_bin: &Path, uv: &Path) -> PathBuf {
+/// Resolves a recipe's first argv element to a concrete program: managed tools first, then
+/// project-local scripts, then anything on the tool path (venv, node_modules/.bin, runtimes).
+pub fn resolve_program(name: &str, root: &Path, tools: &crate::runtime::Tools) -> PathBuf {
     match name {
-        "uv" => return uv.to_owned(),
-        "python" | "python3" => return venv_bin.join(crate::runtime::exe("python")),
+        "uv" => return tools.uv.clone(),
+        "python" | "python3" => return tools.python.clone(),
         _ => {}
     }
-    if name.starts_with("./") || name.starts_with(".\\") {
-        return src.join(&name[2..]);
+    if let Some(rel) = name.strip_prefix("./").or_else(|| name.strip_prefix(".\\")) {
+        return root.join(rel);
     }
-    for candidate in [crate::runtime::exe(name), name.to_owned()] {
-        let p = venv_bin.join(&candidate);
-        if p.is_file() {
-            return p;
+    let candidates: Vec<String> = if cfg!(windows) {
+        ["exe", "cmd", "bat"]
+            .iter()
+            .map(|e| format!("{name}.{e}"))
+            .chain([name.to_owned()])
+            .collect()
+    } else {
+        vec![name.to_owned()]
+    };
+    for dir in &tools.path {
+        for c in &candidates {
+            let p = dir.join(c);
+            if p.is_file() {
+                return p;
+            }
         }
     }
     PathBuf::from(name)

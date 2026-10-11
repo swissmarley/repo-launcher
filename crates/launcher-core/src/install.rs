@@ -7,7 +7,7 @@ use crate::paths::{AppPaths, ProjectPaths};
 use crate::problem::{Problem, ProblemCode, Result};
 use crate::proc;
 use crate::recipe::{Recipe, Step, StepLabel};
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -72,6 +72,10 @@ pub struct Context<'a> {
     pub sink: &'a EventSink,
     pub log: &'a ProjectLog,
     pub cancel: &'a CancellationToken,
+    pub tools: &'a crate::runtime::Tools,
+    /// Identifies the source being installed (commit id). Part of every step fingerprint, so an
+    /// update re-runs the steps but an interrupted install of the same commit resumes.
+    pub source_id: &'a str,
     /// Last emitted (stage, fraction), to drop progress events that change nothing visible.
     pub last_progress: Mutex<Option<(Stage, f32)>>,
 }
@@ -110,36 +114,105 @@ pub fn expand(s: &str, vars: &[(&str, String)]) -> String {
 
 fn stage_of(label: &StepLabel) -> Stage {
     match label {
-        StepLabel::SetUpPython { .. } | StepLabel::CreateEnvironment => Stage::Preparing,
-        StepLabel::InstallHelpers { .. } | StepLabel::Custom { .. } => Stage::InstallingHelpers,
+        StepLabel::SetUpPython { .. }
+        | StepLabel::SetUpNode { .. }
+        | StepLabel::CreateEnvironment => Stage::Preparing,
+        StepLabel::InstallHelpers { .. } | StepLabel::BuildProject | StepLabel::Custom { .. } => {
+            Stage::InstallingHelpers
+        }
     }
 }
 
+/// Fingerprints of steps that already succeeded, kept in the project's meta folder.
+struct StepRecord {
+    path: PathBuf,
+    done: BTreeSet<String>,
+}
+
+impl StepRecord {
+    fn load(project: &ProjectPaths) -> Self {
+        let path = project.meta().join("steps.json");
+        let done = std::fs::read(&path)
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or_default();
+        Self { path, done }
+    }
+
+    fn mark(&mut self, fingerprint: String) {
+        self.done.insert(fingerprint);
+        if let Some(dir) = self.path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        if let Ok(json) = serde_json::to_vec(&self.done) {
+            let _ = std::fs::write(&self.path, json);
+        }
+    }
+}
+
+/// Forgets completed steps so the next install runs everything again (used by Repair).
+pub fn forget_steps(project: &ProjectPaths) {
+    let _ = std::fs::remove_file(project.meta().join("steps.json"));
+}
+
+fn fingerprint(step: &Step, source_id: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let json = serde_json::to_vec(step).unwrap_or_default();
+    let mut h = Sha256::new();
+    h.update(source_id.as_bytes());
+    h.update(json);
+    hex::encode(h.finalize())
+}
+
 /// Install progress spans 0.30..0.95; downloading the source and runtimes covers the rest.
-pub async fn run_steps(ctx: &Context<'_>, recipe: &Recipe, uv: &Path) -> Result<()> {
-    let n = recipe.install.len().max(1) as f32;
-    for (i, step) in recipe.install.iter().enumerate() {
+pub async fn run_steps(ctx: &Context<'_>, recipe: &Recipe) -> Result<()> {
+    let steps: Vec<&Step> = recipe.install.iter().filter(|s| s.applies_here()).collect();
+    let n = steps.len().max(1) as f32;
+    let mut record = StepRecord::load(ctx.project);
+    for (i, step) in steps.into_iter().enumerate() {
         let fraction = 0.30 + 0.65 * (i as f32 / n);
         ctx.progress(stage_of(&step.label), fraction, Some(step.label.clone()));
-        run_step(ctx, step, uv).await?;
+        let fp = fingerprint(step, ctx.source_id);
+        if record.done.contains(&fp) {
+            ctx.log.line(
+                LogStream::Engine,
+                format!("already done: {}", step.argv.join(" ")),
+            );
+            continue;
+        }
+        let mut result = run_command(ctx, step, &step.argv).await;
+        for fallback in &step.fallbacks {
+            match &result {
+                Err(p) if p.code != ProblemCode::Cancelled => {
+                    ctx.log.line(
+                        LogStream::Engine,
+                        "that didn't work; trying another way".into(),
+                    );
+                    result = run_command(ctx, step, fallback).await;
+                }
+                _ => break,
+            }
+        }
+        result?;
+        record.mark(fp);
     }
     Ok(())
 }
 
-async fn run_step(ctx: &Context<'_>, step: &Step, uv: &Path) -> Result<()> {
+async fn run_command(ctx: &Context<'_>, step: &Step, argv: &[String]) -> Result<()> {
     let vars = ctx.vars();
-    let argv: Vec<String> = step.argv.iter().map(|a| expand(a, &vars)).collect();
+    let argv: Vec<String> = argv.iter().map(|a| expand(a, &vars)).collect();
     let (program, args) = argv
         .split_first()
         .ok_or_else(|| Problem::internal("empty step"))?;
-    let program = proc::resolve_program(program, ctx.root, &ctx.project.venv_bin(), uv);
+    let program = proc::resolve_program(program, ctx.root, ctx.tools);
     let cwd: PathBuf = ctx.root.join(&step.cwd);
     let extra: BTreeMap<String, String> = step
         .env
         .iter()
         .map(|(k, v)| (k.clone(), expand(v, &vars)))
         .collect();
-    let env = project_env(ctx.app, ctx.project, &extra);
+    let env = project_env(ctx.app, ctx.project, &ctx.tools.path, &extra);
 
     ctx.log
         .line(LogStream::Engine, format!("$ {}", argv.join(" ")));

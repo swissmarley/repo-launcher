@@ -1,5 +1,6 @@
 //! Looks at a project's files and reports what it is. Pure: no network, no side effects.
 
+pub mod node;
 pub mod python;
 mod tree;
 
@@ -38,6 +39,7 @@ pub struct DetectionReport {
     pub ecosystems: Vec<Ecosystem>,
     pub has_launcher_json: bool,
     pub python: Option<python::PythonInfo>,
+    pub node: Option<node::NodeInfo>,
 }
 
 pub fn detect(tree: &FileTree) -> DetectionReport {
@@ -47,7 +49,8 @@ pub fn detect(tree: &FileTree) -> DetectionReport {
     if python.is_some() {
         ecosystems.push(Ecosystem::Python);
     }
-    if has("package.json") {
+    let node = node::detect(tree);
+    if node.is_some() {
         ecosystems.push(Ecosystem::Node);
     }
     if has("Cargo.toml") {
@@ -75,5 +78,6 @@ pub fn detect(tree: &FileTree) -> DetectionReport {
         ecosystems,
         has_launcher_json: has("launcher.json"),
         python,
+        node,
     }
 }

@@ -1,5 +1,6 @@
 pub mod archive;
 pub mod github;
+pub mod sync;
 pub mod url;
 
 use std::path::PathBuf;

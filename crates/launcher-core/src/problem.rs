@@ -18,6 +18,8 @@ pub enum ProblemCode {
     DownloadCorrupt,
     UnsupportedProject,
     NoEntryPoint,
+    ManifestInvalid,
+    MissingSystemTool,
     InstallStepFailed,
     NeedsCompiler,
     NotInstalled,

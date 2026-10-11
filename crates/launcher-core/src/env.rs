@@ -70,7 +70,7 @@ fn allowed(key: &str) -> bool {
     }
 }
 
-fn system_path() -> Vec<PathBuf> {
+pub fn system_path() -> Vec<PathBuf> {
     if cfg!(windows) {
         let root = std::env::var_os("SYSTEMROOT")
             .map(PathBuf::from)
@@ -89,24 +89,23 @@ fn system_path() -> Vec<PathBuf> {
     }
 }
 
-/// The environment every engine-run command gets for one project.
+/// The allowlisted part of the Launcher's own environment.
+pub fn base_env() -> BTreeMap<OsString, OsString> {
+    std::env::vars_os()
+        .filter(|(k, _)| k.to_str().is_some_and(allowed))
+        .collect()
+}
+
+/// The environment every engine-run command gets for one project. `tool_path` comes first on
+/// PATH (managed runtimes, the project's own environment), then the OS essentials.
 pub fn project_env(
     app: &AppPaths,
     project: &ProjectPaths,
+    tool_path: &[PathBuf],
     extra: &BTreeMap<String, String>,
 ) -> Vec<(OsString, OsString)> {
-    let mut env: BTreeMap<OsString, OsString> = std::env::vars_os()
-        .filter(|(k, _)| k.to_str().is_some_and(allowed))
-        .collect();
-
-    let mut path = vec![
-        project.venv_bin(),
-        crate::runtime::uv_path(app)
-            .parent()
-            .map(PathBuf::from)
-            .unwrap_or_default(),
-    ];
-    path.extend(system_path());
+    let mut env = base_env();
+    let path = tool_path.iter().cloned().chain(system_path());
     if let Ok(joined) = std::env::join_paths(path) {
         env.insert("PATH".into(), joined);
     }
@@ -135,6 +134,22 @@ pub fn project_env(
     if cfg!(target_os = "linux") {
         set("XDG_CACHE_HOME", home.join("cache").into());
     }
+    // Node ecosystem: caches in the app folder, no telemetry, no auto-opened browsers.
+    let cache = app.cache();
+    set("npm_config_cache", cache.join("npm").into());
+    set("npm_config_store_dir", cache.join("pnpm-store").into());
+    set("npm_config_update_notifier", "false".into());
+    set("npm_config_fund", "false".into());
+    set("npm_config_audit", "false".into());
+    set("YARN_CACHE_FOLDER", cache.join("yarn").into());
+    set("YARN_GLOBAL_FOLDER", cache.join("yarn-berry").into());
+    set("YARN_ENABLE_TELEMETRY", "0".into());
+    set("BUN_INSTALL_CACHE_DIR", cache.join("bun").into());
+    set("NEXT_TELEMETRY_DISABLED", "1".into());
+    set("ASTRO_TELEMETRY_DISABLED", "1".into());
+    set("NUXT_TELEMETRY_DISABLED", "1".into());
+    set("GATSBY_TELEMETRY_DISABLED", "1".into());
+    set("BROWSER", "none".into());
 
     for (k, v) in extra {
         env.insert(k.into(), v.into());
@@ -157,7 +172,7 @@ mod tests {
         let app = AppPaths::at("/tmp/rl");
         let proj = app.project("abc");
         let extra = BTreeMap::from([("PORT".to_string(), "8501".to_string())]);
-        let env: BTreeMap<String, String> = project_env(&app, &proj, &extra)
+        let env: BTreeMap<String, String> = project_env(&app, &proj, &[proj.venv_bin()], &extra)
             .into_iter()
             .map(|(k, v)| {
                 (

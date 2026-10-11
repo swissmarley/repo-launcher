@@ -199,6 +199,21 @@ impl Store {
         Ok(())
     }
 
+    /// Name/description a project's own `launcher.json` asks for.
+    pub fn set_display(
+        &self,
+        id: &str,
+        name: Option<&str>,
+        description: Option<&str>,
+    ) -> Result<()> {
+        self.conn().execute(
+            "UPDATE projects SET name = COALESCE(?2, name), description = COALESCE(?3, description),
+             updated_at = ?4 WHERE id = ?1",
+            params![id, name, description, now()],
+        )?;
+        Ok(())
+    }
+
     pub fn delete(&self, id: &str) -> Result<()> {
         self.conn()
             .execute("DELETE FROM projects WHERE id = ?1", [id])?;

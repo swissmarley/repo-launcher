@@ -74,6 +74,10 @@ impl ProjectPaths {
     pub fn logs(&self) -> PathBuf {
         self.root.join("logs")
     }
+    /// Engine bookkeeping: installed-file manifest, completed steps, backups.
+    pub fn meta(&self) -> PathBuf {
+        self.root.join("meta")
+    }
     pub fn venv_bin(&self) -> PathBuf {
         venv_bin(&self.env())
     }

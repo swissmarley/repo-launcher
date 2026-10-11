@@ -31,8 +31,11 @@ struct Running {
     stop: CancellationToken,
     done: watch::Receiver<Option<Option<i32>>>,
     history: Arc<Mutex<VecDeque<String>>>,
-    url: Option<String>,
+    /// The address that answered, once known.
+    url: Arc<Mutex<Option<String>>>,
 }
+
+type Urls = Arc<Mutex<Vec<String>>>;
 
 #[derive(Default, Clone)]
 pub struct Supervisor {
@@ -45,7 +48,7 @@ pub struct LaunchRequest<'a> {
     pub root: &'a Path,
     pub project_id: &'a str,
     pub recipe: &'a Recipe,
-    pub uv: &'a Path,
+    pub tools: &'a crate::runtime::Tools,
     pub sink: EventSink,
 }
 
@@ -64,7 +67,7 @@ impl Supervisor {
         self.map()
             .get(id)
             .filter(|r| r.done.borrow().is_none())
-            .and_then(|r| r.url.clone())
+            .and_then(|r| r.url.lock().ok().and_then(|u| u.clone()))
     }
 
     pub fn running_ids(&self) -> Vec<String> {
@@ -104,17 +107,34 @@ impl Supervisor {
         let (program, args) = argv
             .split_first()
             .ok_or_else(|| Problem::internal("empty run command"))?;
-        let program: PathBuf =
-            proc::resolve_program(program, req.root, &req.project.venv_bin(), req.uv);
+        let program: PathBuf = proc::resolve_program(program, req.root, req.tools);
         let extra: BTreeMap<String, String> = run
             .env
             .iter()
             .map(|(k, v)| (k.clone(), expand(v, &vars)))
             .collect();
-        let env = project_env(req.app, req.project, &extra);
+        let env = project_env(req.app, req.project, &req.tools.path, &extra);
         let cwd = req.root.join(&run.cwd);
 
-        let log = ProjectLog::create(&id, &req.project.logs().join("run.log"), req.sink.clone());
+        // Watch the app's own output for the address it says it's serving on.
+        let seen: Urls = Arc::default();
+        let sniff = {
+            let (seen, sink) = (seen.clone(), req.sink.clone());
+            let sink: EventSink = Arc::new(move |e: EngineEvent| {
+                if let EngineEvent::Log { line, .. } = &e
+                    && let Ok(mut seen) = seen.lock()
+                {
+                    for u in local_urls(line) {
+                        if !seen.contains(&u) {
+                            seen.push(u);
+                        }
+                    }
+                }
+                sink(e)
+            });
+            sink
+        };
+        let log = ProjectLog::create(&id, &req.project.logs().join("run.log"), sniff);
         log.line(LogStream::Engine, format!("$ {}", argv.join(" ")));
         let mut child = proc::spawn(proc::Spec {
             program: &program,
@@ -133,15 +153,14 @@ impl Supervisor {
 
         let stop = CancellationToken::new();
         let (done_tx, done_rx) = watch::channel(None);
-        let url = port.map(|p| {
-            let path = req
-                .recipe
-                .web
-                .as_ref()
-                .map(|w| w.path.as_str())
-                .unwrap_or("/");
-            format!("http://127.0.0.1:{p}{path}")
-        });
+        let path = req
+            .recipe
+            .web
+            .as_ref()
+            .map(|w| w.path.clone())
+            .unwrap_or_else(|| "/".into());
+        let offered = port.map(|p| format!("http://127.0.0.1:{p}{path}"));
+        let url_slot: Arc<Mutex<Option<String>>> = Arc::default();
 
         self.map().insert(
             id.clone(),
@@ -149,7 +168,7 @@ impl Supervisor {
                 stop: stop.clone(),
                 done: done_rx.clone(),
                 history: history.clone(),
-                url: url.clone(),
+                url: url_slot.clone(),
             },
         );
         emit(&req.sink, &id, RunState::Starting, None, None);
@@ -177,63 +196,58 @@ impl Supervisor {
             emit(&sink, &monitor_id, state, None, code);
         });
 
-        match (req.recipe.kind, &url) {
-            (AppKind::Web, Some(url)) => {
-                let timeout = Duration::from_secs(
-                    req.recipe
-                        .web
-                        .as_ref()
-                        .map_or(180, |w| w.ready_timeout_secs),
-                );
-                self.wait_ready(&id, url, timeout, done_rx, &history)
-                    .await?;
-                emit(&req.sink, &id, RunState::Running, Some(url.clone()), None);
+        let probe = Probe {
+            offered: offered.clone(),
+            seen,
+            done: done_rx,
+        };
+        if req.recipe.kind == AppKind::Web {
+            let timeout = Duration::from_secs(
+                req.recipe
+                    .web
+                    .as_ref()
+                    .map_or(180, |w| w.ready_timeout_secs),
+            );
+            let url = match probe.wait(timeout).await? {
+                Some(url) => url,
+                None => {
+                    let tail = tail_of(&history);
+                    let code = *probe.done.borrow();
+                    return Err(match code {
+                        Some(code) => diagnose::launch_failure(&tail, code),
+                        None => Problem::new(ProblemCode::StartTimeout)
+                            .param("id", &id)
+                            .fix(FixAction::Retry),
+                    });
+                }
+            };
+            if let Ok(mut slot) = url_slot.lock() {
+                *slot = Some(url.clone());
             }
-            _ => emit(&req.sink, &id, RunState::Running, None, None),
+            emit(&req.sink, &id, RunState::Running, Some(url.clone()), None);
+            let port = url_port(&url).or(port);
+            return Ok(LaunchInfo {
+                url: Some(url),
+                port,
+            });
         }
-        Ok(LaunchInfo { url, port })
-    }
 
-    async fn wait_ready(
-        &self,
-        id: &str,
-        url: &str,
-        timeout: Duration,
-        mut done: watch::Receiver<Option<Option<i32>>>,
-        history: &Arc<Mutex<VecDeque<String>>>,
-    ) -> Result<()> {
-        // Never route a localhost probe through a proxy.
-        let http = reqwest::Client::builder()
-            .no_proxy()
-            .timeout(Duration::from_secs(2))
-            .build()
-            .map_err(Problem::internal)?;
-        let start = Instant::now();
-        let mut delay = Duration::from_millis(250);
-        loop {
-            if let Some(code) = *done.borrow() {
-                let tail: Vec<String> = history
-                    .lock()
-                    .map(|h| h.iter().rev().take(60).rev().cloned().collect())
-                    .unwrap_or_default();
-                return Err(diagnose::launch_failure(&tail, code));
+        // Terminal and desktop apps are "running" right away. Some still start a web page;
+        // if one answers, surface it so the user gets an Open button.
+        emit(&req.sink, &id, RunState::Running, None, None);
+        let (sink, id2) = (req.sink.clone(), id.clone());
+        tokio::spawn(async move {
+            if let Ok(Some(url)) = probe.wait(Duration::from_secs(600)).await {
+                if let Ok(mut slot) = url_slot.lock() {
+                    *slot = Some(url.clone());
+                }
+                emit(&sink, &id2, RunState::Running, Some(url), None);
             }
-            if let Ok(resp) = http.get(url).send().await
-                && resp.status().as_u16() < 500
-            {
-                return Ok(());
-            }
-            if start.elapsed() > timeout {
-                return Err(Problem::new(ProblemCode::StartTimeout)
-                    .param("id", id)
-                    .fix(FixAction::Retry));
-            }
-            tokio::select! {
-                _ = tokio::time::sleep(delay) => {}
-                _ = done.changed() => {}
-            }
-            delay = (delay * 2).min(Duration::from_secs(2));
-        }
+        });
+        Ok(LaunchInfo {
+            url: None,
+            port: None,
+        })
     }
 
     /// Stops a project's whole process tree. Returns once it has exited.
@@ -250,6 +264,97 @@ impl Supervisor {
             self.stop(&id).await;
         }
     }
+}
+
+/// Waits for the app's address: the one we offered, or one it printed.
+struct Probe {
+    offered: Option<String>,
+    seen: Urls,
+    done: watch::Receiver<Option<Option<i32>>>,
+}
+
+impl Probe {
+    /// `Ok(Some(url))` once an address answers, `Ok(None)` if the app exited or time ran out.
+    async fn wait(&self, timeout: Duration) -> Result<Option<String>> {
+        // Never route a localhost probe through a proxy.
+        let http = reqwest::Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(2))
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(Problem::internal)?;
+        let start = Instant::now();
+        let mut done = self.done.clone();
+        let mut delay = Duration::from_millis(250);
+        loop {
+            if done.borrow().is_some() {
+                return Ok(None);
+            }
+            let mut candidates: Vec<String> =
+                self.seen.lock().map(|s| s.clone()).unwrap_or_default();
+            // Prefer what the app printed: it may ignore the port we offered.
+            candidates.extend(self.offered.clone());
+            for url in candidates {
+                if let Ok(resp) = http.get(&url).send().await
+                    && resp.status().as_u16() < 500
+                {
+                    return Ok(Some(url));
+                }
+            }
+            if start.elapsed() > timeout {
+                return Ok(None);
+            }
+            tokio::select! {
+                _ = tokio::time::sleep(delay) => {}
+                _ = done.changed() => {}
+            }
+            delay = (delay * 2).min(Duration::from_secs(2));
+        }
+    }
+}
+
+fn tail_of(history: &Arc<Mutex<VecDeque<String>>>) -> Vec<String> {
+    history
+        .lock()
+        .map(|h| h.iter().rev().take(60).rev().cloned().collect())
+        .unwrap_or_default()
+}
+
+fn url_port(url: &str) -> Option<u16> {
+    url::Url::parse(url).ok()?.port()
+}
+
+/// Local web addresses mentioned in a line of output, normalized for a browser.
+pub fn local_urls(line: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for (i, _) in line.match_indices("http") {
+        let rest = &line[i..];
+        let end = rest
+            .find(|c: char| {
+                c.is_whitespace() || matches!(c, '"' | '\'' | '<' | '>' | ')' | ']' | '`')
+            })
+            .unwrap_or(rest.len());
+        let candidate = rest[..end].trim_end_matches(['.', ',', ';', ':']);
+        let Ok(mut url) = url::Url::parse(candidate) else {
+            continue;
+        };
+        if !matches!(url.scheme(), "http" | "https") {
+            continue;
+        }
+        let host = url.host_str().unwrap_or_default().to_owned();
+        let local = matches!(
+            host.as_str(),
+            "localhost" | "127.0.0.1" | "0.0.0.0" | "[::]" | "[::1]" | "::" | "::1"
+        );
+        if !local || url.port_or_known_default().is_none() {
+            continue;
+        }
+        if host != "localhost" {
+            let _ = url.set_host(Some("127.0.0.1"));
+        }
+        out.push(url.to_string());
+    }
+    out
 }
 
 fn emit(sink: &EventSink, id: &str, state: RunState, url: Option<String>, exit_code: Option<i32>) {
@@ -295,6 +400,23 @@ mod tests {
         let port = taken.local_addr().unwrap().port();
         let picked = pick_port(port).unwrap();
         assert_ne!(picked, port);
+    }
+
+    #[test]
+    fn finds_local_urls_in_output() {
+        assert_eq!(
+            local_urls("  ➜  Local:   http://localhost:5173/"),
+            ["http://localhost:5173/"]
+        );
+        assert_eq!(
+            local_urls("Running on http://0.0.0.0:8000 (Press CTRL+C)"),
+            ["http://127.0.0.1:8000/"]
+        );
+        assert_eq!(
+            local_urls("open http://127.0.0.1:8888/lab?token=abc."),
+            ["http://127.0.0.1:8888/lab?token=abc"]
+        );
+        assert!(local_urls("docs at https://example.com and http://192.168.1.4:3000").is_empty());
     }
 
     #[test]

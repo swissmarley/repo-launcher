@@ -12,26 +12,7 @@ pub fn recipe(py: &PythonInfo) -> Result<Recipe, Problem> {
         .ok_or_else(|| Problem::new(ProblemCode::NoEntryPoint))?;
     let version = pyversion::choose(py.requires_python.as_deref(), py.pinned_version.as_deref());
 
-    let mut install = vec![
-        step(
-            StepLabel::SetUpPython {
-                version: version.clone(),
-            },
-            &["uv", "python", "install", "--no-bin", &version],
-        ),
-        step(
-            StepLabel::CreateEnvironment,
-            &[
-                "uv",
-                "venv",
-                "{env}",
-                "--python",
-                &version,
-                "--allow-existing",
-                "--no-project",
-            ],
-        ),
-    ];
+    let mut install = setup_steps(&version);
 
     if py.has_uv_lock {
         let mut s = step(
@@ -60,14 +41,12 @@ pub fn recipe(py: &PythonInfo) -> Result<Recipe, Problem> {
         } else if !py.pyproject_dependencies.is_empty() {
             let mut argv = vec!["uv".to_owned(), "pip".into(), "install".into()];
             argv.extend(py.pyproject_dependencies.iter().cloned());
-            install.push(Step {
-                label: StepLabel::InstallHelpers {
+            install.push(Step::new(
+                StepLabel::InstallHelpers {
                     from: "pyproject.toml".into(),
                 },
                 argv,
-                cwd: ".".into(),
-                env: BTreeMap::new(),
-            });
+            ));
         }
     }
 
@@ -101,6 +80,9 @@ pub fn recipe(py: &PythonInfo) -> Result<Recipe, Problem> {
         kind,
         source: RecipeSource::Heuristic,
         python: Some(version),
+        node: None,
+        env_vars: Vec::new(),
+        system_tools: Vec::new(),
         install,
         run,
         web,
@@ -117,6 +99,7 @@ fn run_for(
             preferred_port: port,
             path: "/".into(),
             ready_timeout_secs: READY_TIMEOUT_SECS,
+            discover: false,
         })
     };
     match kind {
@@ -182,13 +165,32 @@ fn run_for(
     }
 }
 
+/// Installs the Python version and creates the project's private environment.
+pub(super) fn setup_steps(version: &str) -> Vec<Step> {
+    vec![
+        step(
+            StepLabel::SetUpPython {
+                version: version.to_owned(),
+            },
+            &["uv", "python", "install", "--no-bin", version],
+        ),
+        step(
+            StepLabel::CreateEnvironment,
+            &[
+                "uv",
+                "venv",
+                "{env}",
+                "--python",
+                version,
+                "--allow-existing",
+                "--no-project",
+            ],
+        ),
+    ]
+}
+
 fn step(label: StepLabel, argv: &[&str]) -> Step {
-    Step {
-        label,
-        argv: argv.iter().map(|s| s.to_string()).collect(),
-        cwd: ".".into(),
-        env: BTreeMap::new(),
-    }
+    Step::new(label, argv.iter().map(|s| s.to_string()).collect())
 }
 
 fn run(argv: &[&str]) -> RunSpec {

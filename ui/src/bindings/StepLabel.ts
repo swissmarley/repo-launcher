@@ -3,4 +3,4 @@
 /**
  * Plain-language identity of a step; the UI turns it into words.
  */
-export type StepLabel = { "kind": "setUpPython", version: string, } | { "kind": "createEnvironment" } | { "kind": "installHelpers", from: string, } | { "kind": "custom", name: string, };
+export type StepLabel = { "kind": "setUpPython", version: string, } | { "kind": "setUpNode", version: string, } | { "kind": "createEnvironment" } | { "kind": "installHelpers", from: string, } | { "kind": "buildProject" } | { "kind": "custom", name: string, };

@@ -49,7 +49,9 @@
     "setUpPython": "Setting up Python {{version}}",
     "createEnvironment": "Creating a private space for this project",
     "installHelpers": "Installing what it needs",
-    "custom": "Finishing setup"
+    "custom": "Finishing setup",
+    "setUpNode": "Setting up Node.js {{version}}",
+    "buildProject": "Building the project"
   },
   "remove": {
     "title": "Remove {{name}}?",
@@ -99,6 +101,14 @@
     "NO_ENTRY_POINT": {
       "title": "We couldn't tell how to start this project.",
       "body": "It may be a library or a collection of files rather than an app you can open."
+    },
+    "MANIFEST_INVALID": {
+      "title": "This project's setup file has a mistake.",
+      "body": "Its launcher.json couldn't be used. Copy the diagnostics and share them with the project's author."
+    },
+    "MISSING_SYSTEM_TOOL": {
+      "title": "This project needs “{{tool}}”, which isn't on this computer.",
+      "body": "Install {{tool}} using its official installer, then try again."
     },
     "INSTALL_STEP_FAILED": {
       "title": "Setup didn't finish.",
