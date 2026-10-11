@@ -67,6 +67,8 @@ pub enum UiMessage {
     /// stopped when it started again.
     #[serde(rename_all = "camelCase")]
     Orphans { project_ids: Vec<String> },
+    /// The daily check found a newer version of Repo Launcher.
+    UpdateAvailable { version: String },
 }
 
 pub fn post(app: &AppHandle, msg: UiMessage) {

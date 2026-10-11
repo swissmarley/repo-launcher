@@ -8,6 +8,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 rust-version = "1.90"
 repository = "https://github.com/Swissmarley/repo-launcher"
+publish = false
 
 [profile.release]
 lto = "thin"

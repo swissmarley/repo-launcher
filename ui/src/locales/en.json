@@ -12,6 +12,35 @@
     "title": "Run projects from GitHub — no setup needed",
     "body": "Paste a link to a project on GitHub above. Repo Launcher downloads it, sets up everything it needs, and starts it for you."
   },
+  "starters": {
+    "heading": "Or try one of these",
+    "intro": "Each one is free, needs no account or keys, and is ready in a minute or two.",
+    "try": "Try it",
+    "tryNamed": "Try {{name}}",
+    "safety": "Nothing runs until you have seen what it will do and agreed.",
+    "items": {
+      "uberPickups": {
+        "name": "Uber pickups in New York",
+        "description": "An interactive map and chart of a month of Uber rides, made with Streamlit."
+      },
+      "gradioHello": {
+        "name": "Hello, Gradio",
+        "description": "A tiny web app that greets you by name: a first taste of Gradio, the toolkit behind many AI demos."
+      },
+      "viteReact": {
+        "name": "React starter",
+        "description": "The starting point for a React web app, which updates instantly as you edit it."
+      },
+      "astroBasics": {
+        "name": "Astro website",
+        "description": "A small website made with Astro, ready to turn into your own."
+      },
+      "cowsay": {
+        "name": "cowsay",
+        "description": "A classic: a cow that says whatever you type, in a terminal window."
+      }
+    }
+  },
   "library": {
     "heading": "Your projects"
   },
@@ -169,6 +198,10 @@
       "title": "Repo Launcher couldn't change whether it starts when you log in.",
       "body": "Your system didn't allow the change. Try again, or check the login items in your system settings."
     },
+    "UPDATE_FAILED": {
+      "title": "Repo Launcher couldn't update itself.",
+      "body": "Check your internet connection and try again. Your projects and settings are unchanged."
+    },
     "INTERNAL": {
       "title": "Something went wrong on our side.",
       "body": "Try again. If it keeps happening, copy the diagnostics and report it."
@@ -255,6 +288,26 @@
     "upToDate": "You have the latest version.",
     "updated": "Updated to the latest version."
   },
+  "updates": {
+    "heading": "Updates",
+    "current": "You have version {{version}}.",
+    "check": "Check for updates",
+    "checking": "Checking…",
+    "ready": "Repo Launcher {{version}} is ready to install.",
+    "install": "Update and restart",
+    "later": "Later",
+    "downloading": "Downloading Repo Launcher {{version}}…",
+    "autoCheck": "Check for updates automatically",
+    "why": "Once a day, Repo Launcher asks GitHub whether there is a new version. Updates are checked for a signature from Repo Launcher before they are installed.",
+    "notConfigured": "This copy of Repo Launcher can't update itself. New versions are on the releases page.",
+    "releases": "Open the releases page",
+    "restart": {
+      "title": "Update and restart?",
+      "body_one": "{{names}} is still running. Updating stops it; launch it again afterwards.",
+      "body_other": "These projects are still running: {{names}}. Updating stops them; launch them again afterwards.",
+      "confirm": "Stop and update"
+    }
+  },
   "project": {
     "private": "Private"
   },
@@ -309,6 +362,19 @@
         "windows": "taskbar",
         "linux": "system tray"
       }
+    },
+    "removeAll": {
+      "heading": "Remove all Repo Launcher data",
+      "why": "Before you delete Repo Launcher, or to start over: removes everything it has set up on this computer.",
+      "open": "Remove all data…",
+      "title": "Remove everything Repo Launcher set up?",
+      "body": "This can't be undone. Running projects are stopped, then this is deleted:",
+      "projects": "every project, with the files it saved in its own folder",
+      "keys": "the keys you entered and your GitHub connection, from your system's keychain",
+      "shortcuts": "the shortcuts Repo Launcher made, and starting when you log in",
+      "settings": "Repo Launcher's settings, downloaded tools and activity logs",
+      "after": "Repo Launcher then quits. The app itself stays until you delete it.",
+      "confirm": "Remove everything"
     }
   },
   "safety": {
@@ -439,7 +505,8 @@
       "windows": "Added {{name}} to your Start menu and desktop.",
       "linux": "Added {{name}} to your applications menu."
     },
-    "removed": "The shortcut was removed."
+    "removed": "The shortcut was removed.",
+    "comment": "Opens with Repo Launcher"
   },
   "login": {
     "appTurnedOn": "Repo Launcher will now also start when you log in, so it can start {{name}}."
@@ -463,6 +530,24 @@
     "stop": "Stop",
     "show": "Show Repo Launcher",
     "quit": "Quit Repo Launcher"
+  },
+  "menu": {
+    "about": "About {{name}}",
+    "services": "Services",
+    "hide": "Hide {{name}}",
+    "hideOthers": "Hide Others",
+    "showAll": "Show All",
+    "edit": "Edit",
+    "undo": "Undo",
+    "redo": "Redo",
+    "cut": "Cut",
+    "copy": "Copy",
+    "paste": "Paste",
+    "selectAll": "Select All",
+    "window": "Window",
+    "minimize": "Minimize",
+    "fullscreen": "Enter Full Screen",
+    "closeWindow": "Close Window"
   },
   "exec": {
     "finished": "{{name}} finished.",

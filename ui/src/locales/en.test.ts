@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import starters from '../../../crates/launcher-core/src/starters.rs?raw'
 import problemCodes from '../bindings/ProblemCode.ts?raw'
 import en from './en.json'
 
@@ -13,5 +14,13 @@ describe('English strings', () => {
       return !entry?.title
     })
     expect(missing).toEqual([])
+  })
+
+  // The engine's starter list names its wording by key; each needs a name and description.
+  it('cover every starter project', () => {
+    const keys = [...starters.matchAll(/\(\s*"(\w+)",\s*"https:/g)].map((m) => m[1])
+    expect(keys.length).toBe(5)
+    const items = en.starters.items as Record<string, { name?: string; description?: string }>
+    expect(keys.filter((k) => !items[k]?.name || !items[k]?.description)).toEqual([])
   })
 })

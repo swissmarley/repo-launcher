@@ -98,3 +98,76 @@ pub fn venv_bin(venv: &Path) -> PathBuf {
         venv.join("bin")
     }
 }
+
+/// Deletes a file or a folder tree, read-only entries included (Go makes its module cache
+/// read-only). A path that doesn't exist is fine. Symbolic links are removed, never followed.
+pub fn remove_tree(path: &Path) -> std::io::Result<()> {
+    let meta = match std::fs::symlink_metadata(path) {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e),
+    };
+    if !meta.is_dir() {
+        make_writable(path, &meta);
+        return std::fs::remove_file(path);
+    }
+    if std::fs::remove_dir_all(path).is_ok() {
+        return Ok(());
+    }
+    make_tree_writable(path);
+    std::fs::remove_dir_all(path)
+}
+
+fn make_tree_writable(dir: &Path) {
+    if let Ok(meta) = std::fs::symlink_metadata(dir) {
+        make_writable(dir, &meta);
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(meta) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if meta.is_dir() {
+            make_tree_writable(&path);
+        } else if !meta.is_symlink() {
+            make_writable(&path, &meta);
+        }
+    }
+}
+
+fn make_writable(path: &Path, meta: &std::fs::Metadata) {
+    let mut perms = meta.permissions();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        perms.set_mode(perms.mode() | 0o700);
+    }
+    #[cfg(windows)]
+    #[allow(clippy::permissions_set_readonly_false)]
+    perms.set_readonly(false);
+    let _ = std::fs::set_permissions(path, perms);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::remove_tree;
+
+    #[test]
+    fn removes_read_only_trees() {
+        let root = tempfile::tempdir().unwrap();
+        let tree = root.path().join("cache");
+        let inner = tree.join("pkg").join("mod");
+        std::fs::create_dir_all(&inner).unwrap();
+        std::fs::write(inner.join("go.mod"), "module x").unwrap();
+        let mut ro = std::fs::metadata(&inner).unwrap().permissions();
+        ro.set_readonly(true);
+        std::fs::set_permissions(inner.join("go.mod"), ro.clone()).unwrap();
+        std::fs::set_permissions(&inner, ro).unwrap();
+        remove_tree(&tree).unwrap();
+        assert!(!tree.exists());
+        remove_tree(&tree).unwrap();
+    }
+}

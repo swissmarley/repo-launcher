@@ -16,6 +16,17 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
         .menu(&build_menu(app)?)
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| on_menu(app, event.id().as_ref()));
+    // macOS menu bar icons are monochrome "template" images that the system tints for light
+    // and dark menu bars; elsewhere the colored app icon is the norm.
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder
+            .icon(tauri::image::Image::from_bytes(include_bytes!(
+                "../icons/tray-template.png"
+            ))?)
+            .icon_as_template(true);
+    }
+    #[cfg(not(target_os = "macos"))]
     if let Some(icon) = app.default_window_icon() {
         builder = builder.icon(icon.clone());
     }
@@ -131,29 +142,28 @@ fn on_menu(app: &AppHandle, id: &str) {
 }
 
 /// The macOS app menu. Its Quit (⌘Q) is our own item rather than the system one, so quitting
-/// while projects run asks first (D-005); the system's quit can't be held back.
+/// while projects run asks first (D-005); the system's quit can't be held back. Every label
+/// comes from en.json: the predefined items would otherwise show the toolkit's English.
 #[cfg(target_os = "macos")]
 pub fn app_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     use tauri::menu::AboutMetadata;
-    let p = |item: tauri::Result<PredefinedMenuItem<Wry>>| item;
     let name = app.package_info().name.clone();
+    let n = [("name", name.as_str())];
+    let label = |key: &str| t(&format!("menu.{key}"), &n);
+    let sep = || PredefinedMenuItem::separator(app);
     let app_items = Submenu::with_items(
         app,
         &name,
         true,
         &[
-            &p(PredefinedMenuItem::about(
-                app,
-                None,
-                Some(AboutMetadata::default()),
-            ))?,
-            &p(PredefinedMenuItem::separator(app))?,
-            &p(PredefinedMenuItem::services(app, None))?,
-            &p(PredefinedMenuItem::separator(app))?,
-            &p(PredefinedMenuItem::hide(app, None))?,
-            &p(PredefinedMenuItem::hide_others(app, None))?,
-            &p(PredefinedMenuItem::show_all(app, None))?,
-            &p(PredefinedMenuItem::separator(app))?,
+            &PredefinedMenuItem::about(app, Some(&label("about")), Some(AboutMetadata::default()))?,
+            &sep()?,
+            &PredefinedMenuItem::services(app, Some(&label("services")))?,
+            &sep()?,
+            &PredefinedMenuItem::hide(app, Some(&label("hide")))?,
+            &PredefinedMenuItem::hide_others(app, Some(&label("hideOthers")))?,
+            &PredefinedMenuItem::show_all(app, Some(&label("showAll")))?,
+            &sep()?,
             &MenuItem::with_id(
                 app,
                 APP_QUIT,
@@ -166,27 +176,27 @@ pub fn app_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     // Copy and paste in text fields need the Edit menu's shortcuts.
     let edit = Submenu::with_items(
         app,
-        "Edit",
+        label("edit"),
         true,
         &[
-            &p(PredefinedMenuItem::undo(app, None))?,
-            &p(PredefinedMenuItem::redo(app, None))?,
-            &p(PredefinedMenuItem::separator(app))?,
-            &p(PredefinedMenuItem::cut(app, None))?,
-            &p(PredefinedMenuItem::copy(app, None))?,
-            &p(PredefinedMenuItem::paste(app, None))?,
-            &p(PredefinedMenuItem::select_all(app, None))?,
+            &PredefinedMenuItem::undo(app, Some(&label("undo")))?,
+            &PredefinedMenuItem::redo(app, Some(&label("redo")))?,
+            &sep()?,
+            &PredefinedMenuItem::cut(app, Some(&label("cut")))?,
+            &PredefinedMenuItem::copy(app, Some(&label("copy")))?,
+            &PredefinedMenuItem::paste(app, Some(&label("paste")))?,
+            &PredefinedMenuItem::select_all(app, Some(&label("selectAll")))?,
         ],
     )?;
     let window = Submenu::with_items(
         app,
-        "Window",
+        label("window"),
         true,
         &[
-            &p(PredefinedMenuItem::minimize(app, None))?,
-            &p(PredefinedMenuItem::fullscreen(app, None))?,
-            &p(PredefinedMenuItem::separator(app))?,
-            &p(PredefinedMenuItem::close_window(app, None))?,
+            &PredefinedMenuItem::minimize(app, Some(&label("minimize")))?,
+            &PredefinedMenuItem::fullscreen(app, Some(&label("fullscreen")))?,
+            &sep()?,
+            &PredefinedMenuItem::close_window(app, Some(&label("closeWindow")))?,
         ],
     )?;
     Menu::with_items(app, &[&app_items, &edit, &window])

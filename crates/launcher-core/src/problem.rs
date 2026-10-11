@@ -59,6 +59,8 @@ pub enum ProblemCode {
     NoSystemTerminal,
     /// Starting at login couldn't be turned on or off.
     LoginItemFailed,
+    /// Checking for, downloading or installing a new version of Repo Launcher failed.
+    UpdateFailed,
     Internal,
 }
 

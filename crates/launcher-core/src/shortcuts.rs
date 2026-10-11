@@ -9,12 +9,19 @@ use crate::store::ShortcutKind;
 use std::io;
 use std::path::{Path, PathBuf};
 
-/// What shortcuts start: the Launcher itself, plus its icon for the shortcut files.
+/// What shortcuts start: the Launcher itself, plus the icon for the shortcut files (the
+/// Launcher's, or the project's own: see `Engine::launcher_for`).
 #[derive(Debug, Clone, Default)]
 pub struct Launcher {
     pub exe: PathBuf,
     pub icon_png: Option<Vec<u8>>,
     pub icon_icns: Option<Vec<u8>>,
+    /// Windows; without one, shortcuts show the Launcher program's own icon.
+    pub icon_ico: Option<Vec<u8>>,
+    /// Names the icon file shortcuts point at (Linux, Windows): one per project.
+    pub icon_id: Option<String>,
+    /// The shortcut's tooltip (Linux `Comment`, Windows description), from the app's strings.
+    pub comment: Option<String>,
 }
 
 impl Launcher {
@@ -146,29 +153,44 @@ pub fn write(
     }
     #[cfg(windows)]
     {
-        let _ = icons;
+        let icon = match &launcher.icon_ico {
+            Some(ico) => icon_file(icons, launcher, "ico", ico)?,
+            None => launcher.exe.clone(),
+        };
         windows_lnk::write(
             path,
             &launcher.exe,
             &format!("--launch {id}"),
-            &format!("{name} (Repo Launcher)"),
+            launcher.comment.as_deref().unwrap_or(name),
+            &icon,
         )
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {
         let icon = match &launcher.icon_png {
-            Some(png) => {
-                std::fs::create_dir_all(icons)?;
-                let file = icons.join("repo-launcher.png");
-                if std::fs::read(&file).ok().as_deref() != Some(png.as_slice()) {
-                    std::fs::write(&file, png)?;
-                }
-                file.to_string_lossy().into_owned()
-            }
+            Some(png) => icon_file(icons, launcher, "png", png)?
+                .to_string_lossy()
+                .into_owned(),
             None => "repo-launcher".to_owned(),
         };
-        write_desktop_entry(path, name, id, &launcher.exe, &icon)
+        let comment = launcher
+            .comment
+            .as_deref()
+            .unwrap_or("Opens with Repo Launcher");
+        write_desktop_entry(path, name, id, &launcher.exe, &icon, comment)
     }
+}
+
+/// Writes the icon file a shortcut points at, unless it is already there.
+#[cfg(not(target_os = "macos"))]
+fn icon_file(icons: &Path, launcher: &Launcher, ext: &str, bytes: &[u8]) -> io::Result<PathBuf> {
+    std::fs::create_dir_all(icons)?;
+    let stem = launcher.icon_id.as_deref().unwrap_or("repo-launcher");
+    let file = icons.join(format!("{stem}.{ext}"));
+    if std::fs::read(&file).ok().as_deref() != Some(bytes) {
+        std::fs::write(&file, bytes)?;
+    }
+    Ok(file)
 }
 
 /// Removes a shortcut; one that is already gone is fine.
@@ -277,13 +299,15 @@ fn write_desktop_entry(
     id: &str,
     exe: &Path,
     icon: &str,
+    comment: &str,
 ) -> io::Result<()> {
     use std::os::unix::fs::PermissionsExt;
     let text = format!(
-        "[Desktop Entry]\nType=Application\nVersion=1.5\nName={name}\nComment=Opens with Repo Launcher\n\
+        "[Desktop Entry]\nType=Application\nVersion=1.5\nName={name}\nComment={comment}\n\
          Exec={exec} --launch {id}\nIcon={icon}\nTerminal=false\nCategories=Development;\n\
          StartupNotify=false\nX-RepoLauncher-Project={id}\n",
         name = desktop_string(name),
+        comment = desktop_string(comment),
         exec = desktop_string(&exec_arg(&exe.to_string_lossy())),
         icon = desktop_string(icon),
     );
@@ -351,13 +375,19 @@ pub mod windows_lnk {
         .map_err(|e| io::Error::other(e.to_string()))
     }
 
-    pub fn write(path: &Path, exe: &Path, args: &str, description: &str) -> io::Result<()> {
+    pub fn write(
+        path: &Path,
+        exe: &Path,
+        args: &str,
+        description: &str,
+        icon: &Path,
+    ) -> io::Result<()> {
         with_com(|| unsafe {
             let link: IShellLinkW = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)?;
             link.SetPath(&HSTRING::from(exe))?;
             link.SetArguments(&HSTRING::from(args))?;
             link.SetDescription(&HSTRING::from(description))?;
-            link.SetIconLocation(&HSTRING::from(exe), 0)?;
+            link.SetIconLocation(&HSTRING::from(icon), 0)?;
             if let Some(dir) = exe.parent() {
                 link.SetWorkingDirectory(&HSTRING::from(dir))?;
             }
@@ -397,6 +427,7 @@ mod tests {
             }),
             icon_png: Some(b"png".to_vec()),
             icon_icns: Some(b"icns".to_vec()),
+            ..Launcher::default()
         }
     }
 

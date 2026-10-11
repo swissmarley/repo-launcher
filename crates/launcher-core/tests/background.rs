@@ -23,8 +23,7 @@ fn engine(home: &Path) -> Engine {
 fn launcher(exe: &Path) -> Launcher {
     Launcher {
         exe: exe.to_path_buf(),
-        icon_png: None,
-        icon_icns: None,
+        ..Launcher::default()
     }
 }
 
@@ -82,6 +81,78 @@ async fn shortcuts_follow_the_project() {
     for s in &made {
         assert!(!Path::new(&s.path).exists(), "{} left behind", s.path);
     }
+}
+
+/// A minimal PNG header for a `side`×`side` image (enough for the size checks).
+fn png(side: u32) -> Vec<u8> {
+    let mut b = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR".to_vec();
+    b.extend_from_slice(&side.to_be_bytes());
+    b.extend_from_slice(&side.to_be_bytes());
+    b.extend_from_slice(&[8, 6, 0, 0, 0]);
+    b
+}
+
+#[tokio::test]
+async fn a_project_logo_becomes_its_icon() {
+    let home = tempfile::tempdir().unwrap();
+    let src = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(src.path().join("art")).unwrap();
+    std::fs::write(src.path().join("art").join("mark.png"), png(128)).unwrap();
+    std::fs::write(
+        src.path().join("launcher.json"),
+        r#"{ "version": 1, "type": "terminal", "icon": "art/mark.png",
+             "run": { "command": ["python", "main.py"] } }"#,
+    )
+    .unwrap();
+    let engine = engine(home.path());
+    let id = local_project(&engine, src.path()).await;
+    assert!(
+        engine.project_icon(&id).is_none(),
+        "nothing is read before review"
+    );
+
+    engine
+        .review(
+            &id,
+            launcher_core::events::null_sink(),
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    let url = engine.project_icon(&id).unwrap();
+    assert!(url.starts_with("data:image/png;base64,"));
+
+    let app = launcher(&home.path().join("bin").join("repo-launcher"));
+    let made = engine.create_shortcuts(&id, &app).unwrap();
+    let shortcut = Path::new(&made[0].path);
+    if cfg!(target_os = "macos") {
+        let icns = std::fs::read(shortcut.join("Contents/Resources/icon.icns")).unwrap();
+        assert_eq!(&icns[8..12], b"ic07");
+    } else {
+        let ext = if cfg!(windows) { "ico" } else { "png" };
+        let icon = home
+            .path()
+            .join("data")
+            .join("icons")
+            .join(format!("{id}.{ext}"));
+        assert!(icon.is_file());
+        if !cfg!(windows) {
+            let entry = std::fs::read_to_string(shortcut).unwrap();
+            assert!(
+                entry.contains(&format!("Icon={}", icon.display())),
+                "{entry}"
+            );
+        }
+    }
+    engine.uninstall(&id).await.unwrap();
+    assert!(
+        !home
+            .path()
+            .join("data")
+            .join("icons")
+            .join(format!("{id}.png"))
+            .exists()
+    );
 }
 
 /// A program that keeps running for a while, in its own process group like a project's.

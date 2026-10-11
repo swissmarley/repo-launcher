@@ -1,6 +1,6 @@
 //! Thin adapters between the WebView and the engine. No business logic lives here.
 
-use crate::{AppState, background, exec};
+use crate::{AppState, background, exec, updates};
 use launcher_core::ai::Preview;
 use launcher_core::engine::{AiOutcome, AppSettings, EnvVarView};
 use launcher_core::recipe::AppKind;
@@ -13,6 +13,8 @@ use serde::Serialize;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_autostart::ManagerExt;
+#[cfg(any(windows, target_os = "linux"))]
+use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_opener::OpenerExt;
 use tokio_util::sync::CancellationToken;
 
@@ -481,4 +483,70 @@ pub fn take_messages(state: State<'_, AppState>) -> Vec<background::UiMessage> {
 #[tauri::command]
 pub fn quit_app(app: AppHandle) {
     background::quit_now(&app);
+}
+
+// --- first run, icons -------------------------------------------------------------------------
+
+/// The curated projects an empty library offers.
+#[tauri::command]
+pub fn starter_projects() -> Vec<launcher_core::starters::Starter> {
+    launcher_core::starters::list()
+}
+
+/// The project's own icon (a `data:` URL), if it has one.
+#[tauri::command]
+pub async fn project_icon(state: State<'_, AppState>, id: String) -> Result<Option<String>> {
+    Ok(state.engine.project_icon(&id))
+}
+
+// --- updating Repo Launcher ------------------------------------------------------------------
+
+#[tauri::command]
+pub fn updates_info(app: AppHandle) -> updates::UpdatesInfo {
+    updates::info(&app)
+}
+
+/// Returns the newer version, if there is one.
+#[tauri::command]
+pub async fn check_for_update(app: AppHandle) -> Result<Option<String>> {
+    updates::check(&app).await
+}
+
+/// Installs the update found by the last check and restarts. Running projects stop.
+#[tauri::command]
+pub async fn install_update(app: AppHandle) -> Result<()> {
+    updates::install(&app).await
+}
+
+#[tauri::command]
+pub fn set_auto_update_check(app: AppHandle, enabled: bool) -> Result<()> {
+    updates::set_auto_check(&app, enabled)
+}
+
+// --- removing everything ---------------------------------------------------------------------
+
+/// "Remove all Repo Launcher data": stops every project, removes every shortcut, keychain entry,
+/// the start-at-login entry and link registration, then quits. A helper (`--uninstall
+/// --delete-data`, the uninstallers' own cleanup) deletes the files once the app has exited.
+#[tauri::command]
+pub async fn remove_all_data(app: AppHandle, state: State<'_, AppState>) -> Result<()> {
+    state.engine.stop_all().await;
+    state.engine.remove_all_shortcuts()?;
+    state.engine.forget_all_secrets()?;
+    let autostart = app.autolaunch();
+    if autostart.is_enabled().unwrap_or(false) {
+        autostart.disable().map_err(login_item_failed)?;
+    }
+    #[cfg(any(windows, target_os = "linux"))]
+    if let Err(e) = app.deep_link().unregister("repolauncher") {
+        log::warn!("unregistering repolauncher:// links: {e}");
+    }
+    // An AppImage's own files vanish when it exits, so the helper is the AppImage itself.
+    std::process::Command::new(&state.launcher.exe)
+        .args(["--uninstall", "--delete-data", "--after"])
+        .arg(std::process::id().to_string())
+        .spawn()
+        .map_err(|e| Problem::internal(format!("starting the cleanup: {e}")))?;
+    background::quit_now(&app);
+    Ok(())
 }

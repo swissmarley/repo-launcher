@@ -1,0 +1,8 @@
+<!-- The menu bar icon (macOS template image): the app icon's window and arrow, black on
+     transparent. macOS tints it for light and dark menu bars. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="208 192 616 616">
+  <path d="M560 248 H312 Q248 248 248 312 V712 Q248 776 312 776 H712 Q776 776 776 712 V464"
+        fill="none" stroke="#000" stroke-width="72" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M440 584 L776 248" fill="none" stroke="#000" stroke-width="80" stroke-linecap="round"/>
+  <path d="M600 232 H792 V424" fill="none" stroke="#000" stroke-width="80" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

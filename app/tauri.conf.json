@@ -30,6 +30,10 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "Repo Launcher contributors",
+    "homepage": "https://github.com/swissmarley/repo-launcher",
+    "license": "MIT OR Apache-2.0",
+    "copyright": "© 2026 Repo Launcher contributors",
     "category": "DeveloperTool",
     "shortDescription": "Install and launch GitHub projects in one click",
     "icon": [
@@ -38,7 +42,37 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "longDescription": "Paste a link to a project on GitHub, click Install, then Launch. Repo Launcher sets up everything the project needs in its own folder and starts it. No git, Python, Node or terminal needed.",
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerHooks": "windows/hooks.nsh"
+      },
+      "wix": {
+        "fragmentPaths": [
+          "windows/uninstall.wxs"
+        ],
+        "componentGroupRefs": [
+          "RepoLauncherUninstall"
+        ]
+      }
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "libayatana-appindicator3-1"
+        ]
+      },
+      "rpm": {
+        "depends": [
+          "libayatana-appindicator-gtk3"
+        ]
+      }
+    }
   },
   "plugins": {
     "deep-link": {

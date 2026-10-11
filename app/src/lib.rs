@@ -3,8 +3,11 @@ mod commands;
 mod exec;
 mod strings;
 mod tray;
+mod uninstall;
+mod updates;
 
 pub use exec::run_if_requested as exec_if_requested;
+pub use uninstall::run_if_requested as uninstall_if_requested;
 
 use background::Request;
 use launcher_core::shortcuts::Launcher;
@@ -33,18 +36,29 @@ pub struct AppState {
     pub background_request: AtomicBool,
     pub started_at_login: bool,
     pub tray_available: AtomicBool,
+    /// This build can update itself (it was made with the release update key).
+    pub updates_configured: bool,
+    /// A newer version found by the last check, waiting to be installed.
+    pub update: Mutex<Option<tauri_plugin_updater::Update>>,
 }
 
 fn launcher() -> Launcher {
     let mut l = Launcher::current().unwrap_or_default();
     l.icon_png = Some(include_bytes!("../icons/128x128.png").to_vec());
     l.icon_icns = Some(include_bytes!("../icons/icon.icns").to_vec());
+    l.comment = Some(strings::t("shortcut.comment", &[]));
     l
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let app = tauri::Builder::default()
+    let context = tauri::generate_context!();
+    let updates_configured = updates::configured(context.config());
+    let mut builder = tauri::Builder::default();
+    if updates_configured {
+        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    }
+    let app = builder
         // First, so a second start hands its request to this one and exits. With the
         // `deep-link` feature, links in its arguments reach `on_open_url` below.
         .plugin(tauri_plugin_single_instance::init(
@@ -65,7 +79,7 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())
-        .setup(|app| {
+        .setup(move |app| {
             // Until we know whether a shortcut started us, there is no Dock icon.
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
@@ -88,6 +102,8 @@ pub fn run() {
                 background_request: AtomicBool::new(request.is_some()),
                 started_at_login: request == Some(Request::Login),
                 tray_available: AtomicBool::new(false),
+                updates_configured,
+                update: Mutex::default(),
             });
 
             // Links while running (and on macOS also the one that started the app).
@@ -135,6 +151,7 @@ pub fn run() {
                     log::info!("background start: {request:?}; the main window stays hidden");
                     background::handle(&h, request);
                 }
+                updates::schedule_check(&h);
             });
 
             if !app
@@ -211,8 +228,15 @@ pub fn run() {
             commands::set_launch_at_login,
             commands::take_messages,
             commands::quit_app,
+            commands::starter_projects,
+            commands::project_icon,
+            commands::updates_info,
+            commands::check_for_update,
+            commands::install_update,
+            commands::set_auto_update_check,
+            commands::remove_all_data,
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("failed to build the app");
 
     app.run(|handle, event| match event {

@@ -3,6 +3,7 @@
 use crate::detect::{self, FileTree};
 use crate::download::{self, Download};
 use crate::events::{EventSink, LogStream, Stage};
+use crate::icon;
 use crate::install::{self, Context, ProjectLog};
 use crate::paths::AppPaths;
 use crate::problem::{FixAction, Problem, ProblemCode, Result};
@@ -417,9 +418,15 @@ impl Engine {
             format!("detected: {:?}", report.ecosystems),
         );
         let (recipe, display) = self.resolve_recipe(&project.id, &tree, &report)?;
-        if let Some(d) = display {
+        if let Some(d) = &display {
             self.store
                 .set_display(&project.id, d.name.as_deref(), d.description.as_deref())?;
+        }
+        let declared = display.as_ref().and_then(|d| d.icon.as_deref());
+        let found = icon::find(&tree, declared);
+        let meta = self.paths.project(&project.id).meta();
+        if let Err(e) = icon::save(&meta, found.as_ref().map(|(_, b, f)| (b.as_slice(), *f))) {
+            tracing::warn!("saving the icon of {}: {e}", project.id);
         }
         self.store.set_recipe(&project.id, &recipe)?;
         Ok((recipe, tree))
@@ -980,6 +987,7 @@ impl Engine {
                 *path = PathBuf::from(&existing.path);
             }
         }
+        let launcher = &self.launcher_for(id, launcher);
         let mut made = Vec::new();
         for (kind, path) in planned {
             shortcuts::write(
@@ -1011,7 +1019,38 @@ impl Engine {
             })?;
             self.store.remove_shortcut(&s.path)?;
         }
+        let icons = self.paths.root.join("icons");
+        for ext in ["png", "ico"] {
+            let _ = std::fs::remove_file(icon::shortcut_icon_path(&icons, id, ext));
+        }
         Ok(())
+    }
+
+    /// The project's own icon for its card, as a `data:` URL.
+    pub fn project_icon(&self, id: &str) -> Option<String> {
+        let (bytes, format) = icon::load(&self.paths.project(id).meta())?;
+        Some(icon::data_url(&bytes, format))
+    }
+
+    /// What this project's shortcuts start, with its own icon where the OS can use it: a
+    /// square PNG (wrapped as `.icns` / `.ico`), or an `.ico` file on Windows.
+    fn launcher_for(&self, id: &str, base: &Launcher) -> Launcher {
+        let mut l = base.clone();
+        l.icon_id = Some(id.to_owned());
+        match icon::load(&self.paths.project(id).meta()) {
+            Some((png, icon::Format::Png)) => {
+                if let Some(icns) = icon::icns_from_png(&png) {
+                    l.icon_icns = Some(icns);
+                }
+                if let Some(ico) = icon::ico_from_png(&png) {
+                    l.icon_ico = Some(ico);
+                }
+                l.icon_png = Some(png);
+            }
+            Some((ico, icon::Format::Ico)) => l.icon_ico = Some(ico),
+            _ => {}
+        }
+        l
     }
 
     /// Removes every shortcut Repo Launcher made (full uninstall). Returns how many.
@@ -1048,7 +1087,7 @@ impl Engine {
                 path,
                 &project.name,
                 &s.project_id,
-                launcher,
+                &self.launcher_for(&s.project_id, launcher),
                 &self.paths.root.join("icons"),
             ) {
                 Ok(()) => {
@@ -1183,6 +1222,16 @@ impl Engine {
             ai_has_key: self.store.has_secret(secrets::ANTHROPIC_KEY)?,
             trusted_publishers: self.store.trusted_publishers()?,
         })
+    }
+
+    /// A setting of the app shell around the engine (updates, for example), stored with the
+    /// engine's own so a full removal deletes it too.
+    pub fn shell_setting(&self, key: &str) -> Option<String> {
+        self.store.setting(&format!("shell.{key}")).ok().flatten()
+    }
+
+    pub fn set_shell_setting(&self, key: &str, value: Option<&str>) -> Result<()> {
+        self.store.set_setting(&format!("shell.{key}"), value)
     }
 
     pub fn set_trusted_publisher(&self, owner: &str, trusted: bool) -> Result<()> {

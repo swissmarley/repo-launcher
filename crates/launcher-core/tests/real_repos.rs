@@ -108,3 +108,17 @@ async fn node_cli() {
     );
     engine.uninstall(&id).await.unwrap();
 }
+
+/// The empty library's "Starter projects" promise they install and launch on every OS, so each
+/// must be one of the projects this file really installs.
+#[test]
+fn every_starter_project_is_tested_here() {
+    let this_file = include_str!("real_repos.rs");
+    for s in launcher_core::starters::list() {
+        assert!(
+            this_file.contains(&format!("\"{}\"", s.link)),
+            "{} is a starter project but isn't installed by a test here",
+            s.link
+        );
+    }
+}

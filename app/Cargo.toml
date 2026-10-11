@@ -5,6 +5,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+publish.workspace = true
 
 [lib]
 name = "repo_launcher_lib"
@@ -14,17 +15,20 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.7.2", features = [] }
 
 [dependencies]
+auto-launch = "0.6.0"
+dirs = "7.0.0"
 launcher-core = { path = "../crates/launcher-core" }
 log = "0.4.34"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.152"
-tauri = { version = "2.12", features = ["tray-icon"] }
+tauri = { version = "2.12", features = ["tray-icon", "image-png"] }
 tauri-plugin-autostart = "2.7.0"
 tauri-plugin-deep-link = "2.6.1"
 tauri-plugin-log = "2"
 tauri-plugin-opener = "2"
 # Must be the first plugin; with `deep-link`, links given to a second launch reach this one.
 tauri-plugin-single-instance = { version = "2.5.3", features = ["deep-link"] }
+tauri-plugin-updater = "=2.13.1"
 tokio = { version = "1.53.2", features = ["rt-multi-thread", "macros", "process", "signal", "io-std", "io-util"] }
 tokio-util = "0.7.20"
 url = "2.5.8"

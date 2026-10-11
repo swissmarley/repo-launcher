@@ -11,6 +11,7 @@ pub mod download;
 pub mod engine;
 pub mod env;
 pub mod events;
+pub mod icon;
 pub mod install;
 pub mod paths;
 pub mod problem;
@@ -24,6 +25,7 @@ pub mod safety;
 pub mod secrets;
 pub mod shortcuts;
 pub mod source;
+pub mod starters;
 pub mod store;
 
 pub use engine::Engine;

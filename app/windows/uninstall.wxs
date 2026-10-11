@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Repo Launcher's addition to Tauri's MSI (DECISIONS D-041): before the program's files are
+     removed, `repo-launcher.exe --uninstall` removes the shortcuts Repo Launcher made, its
+     keychain entries and its start-at-login entry. It runs as the user who uninstalls (their
+     keychain), not during upgrades, and never blocks the uninstall. Projects and downloaded
+     tools stay in the user's folder, as MSI uninstalls leave user data; "Remove all data" in
+     Settings deletes them. The empty component group is what links this fragment in. -->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <ComponentGroup Id="RepoLauncherUninstall" />
+    <CustomAction Id="RepoLauncherCleanup" FileKey="Path" ExeCommand="--uninstall"
+                  Execute="deferred" Impersonate="yes" Return="ignore" />
+    <InstallExecuteSequence>
+      <Custom Action="RepoLauncherCleanup" Before="RemoveFiles">REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE</Custom>
+    </InstallExecuteSequence>
+  </Fragment>
+</Wix>

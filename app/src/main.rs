@@ -6,5 +6,9 @@ fn main() {
     if let Some(code) = repo_launcher_lib::exec_if_requested() {
         std::process::exit(code);
     }
+    // Uninstallers and "Remove all Repo Launcher data": headless cleanup, no window.
+    if let Some(code) = repo_launcher_lib::uninstall_if_requested() {
+        std::process::exit(code);
+    }
     repo_launcher_lib::run();
 }
