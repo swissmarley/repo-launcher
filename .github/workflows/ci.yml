@@ -1,5 +1,6 @@
 # Kept deliberately lean (low Actions budget):
-#  - every push/PR: one Linux job for formatting, lints, unit tests, UI checks
+#  - every push/PR: one Linux job for formatting, lints, unit tests, UI checks and flows,
+#    cargo deny
 #  - pull requests to main + manual runs: the 3-OS matrix with real installs
 name: CI
 
@@ -51,6 +52,14 @@ jobs:
           pnpm --filter ui typecheck
           pnpm --filter ui lint
           pnpm --filter ui test
+      - name: Licenses and advisories (cargo deny)
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check licenses advisories bans sources
+      - name: UI flows, keyboard, accessibility, pseudo-locale (Playwright, mocked engine)
+        run: |
+          pnpm --filter ui exec playwright install --with-deps --only-shell chromium
+          pnpm --filter ui e2e
 
   platforms:
     name: ${{ matrix.os }}

@@ -1,0 +1,134 @@
+# Builds the installers: dmg (macOS, universal), msi + setup.exe (Windows), AppImage, deb and
+# rpm (Linux). Runs only when started by hand or for a version tag (low Actions budget).
+#  - Manual run: builds everything and keeps it as workflow artifacts; no release is made.
+#  - A tag like v0.2.0: also uploads the installers and latest.json to a *draft* GitHub release,
+#    which is published by hand after checking it (docs/RELEASING.md).
+# Signing and signed updates switch on when their secrets and variables exist (docs/RELEASING.md);
+# until then the installers are unsigned and the app doesn't update itself.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  installers:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS (universal)
+            os: macos-latest
+            args: --target universal-apple-darwin
+          - name: Windows
+            os: windows-latest
+            args: ''
+          - name: Linux
+            # The oldest supported Ubuntu, for glibc compatibility (PLAN §6.3).
+            os: ubuntu-22.04
+            args: ''
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      # Apple's variables must be absent, not empty, when there's no certificate yet.
+      APPLE_SIGNING: ${{ startsWith(matrix.os, 'macos') && secrets.APPLE_CERTIFICATE != '' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: The tag matches the app's version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          version=$(node -p "require('./app/tauri.conf.json').version")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME but app/tauri.conf.json says $version"
+            exit 1
+          fi
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ startsWith(matrix.os, 'macos') && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libfuse2 file
+
+      - name: Windows signing tool
+        if: runner.os == 'Windows' && vars.AZURE_SIGNING_ACCOUNT != ''
+        run: cargo install trusted-signing-cli --locked
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Release configuration (update key, Windows signing)
+        shell: bash
+        env:
+          UPDATER_PUBKEY: ${{ vars.UPDATER_PUBKEY }}
+          AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          AZURE_SIGNING_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
+        run: node scripts/release-config.mjs > "$RUNNER_TEMP/release.conf.json"
+
+      - name: Build${{ github.event_name == 'push' && ' and upload to a draft release' || '' }} (signed for macOS)
+        if: env.APPLE_SIGNING == 'true'
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO_LAUNCHER_GITHUB_CLIENT_ID: ${{ vars.GITHUB_APP_CLIENT_ID }}
+          REPO_LAUNCHER_GITHUB_APP_SLUG: ${{ vars.GITHUB_APP_SLUG }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          tauriScript: pnpm tauri
+          args: ${{ matrix.args }} --config ${{ runner.temp }}/release.conf.json
+          tagName: ${{ github.event_name == 'push' && github.ref_name || '' }}
+          releaseName: Repo Launcher ${{ github.ref_name }}
+          releaseDraft: true
+          uploadWorkflowArtifacts: ${{ github.event_name != 'push' }}
+
+      - name: Build${{ github.event_name == 'push' && ' and upload to a draft release' || '' }}
+        if: env.APPLE_SIGNING != 'true'
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO_LAUNCHER_GITHUB_CLIENT_ID: ${{ vars.GITHUB_APP_CLIENT_ID }}
+          REPO_LAUNCHER_GITHUB_APP_SLUG: ${{ vars.GITHUB_APP_SLUG }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        with:
+          tauriScript: pnpm tauri
+          args: ${{ matrix.args }} --config ${{ runner.temp }}/release.conf.json
+          tagName: ${{ github.event_name == 'push' && github.ref_name || '' }}
+          releaseName: Repo Launcher ${{ github.ref_name }}
+          releaseDraft: true
+          uploadWorkflowArtifacts: ${{ github.event_name != 'push' }}
