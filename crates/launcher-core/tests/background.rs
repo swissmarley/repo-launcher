@@ -46,14 +46,15 @@ async fn shortcuts_follow_the_project() {
     for s in &made {
         assert!(Path::new(&s.path).exists(), "{}", s.path);
     }
-    assert_eq!(engine.shortcuts(&id).unwrap(), made);
+    let mut recorded = engine.shortcuts(&id).unwrap();
+    recorded.sort_by(|a, b| a.path.cmp(&b.path));
+    let mut expected = made.clone();
+    expected.sort_by(|a, b| a.path.cmp(&b.path));
+    assert_eq!(recorded, expected);
 
     // Creating again rewrites the same files instead of adding numbered copies.
     let again = engine.create_shortcuts(&id, &app).unwrap();
-    assert_eq!(
-        again.iter().map(|s| &s.path).collect::<Vec<_>>(),
-        made.iter().map(|s| &s.path).collect::<Vec<_>>()
-    );
+    assert_eq!(again, made);
 
     // The app moved: shortcuts that start it by path are rewritten. macOS shortcuts open a
     // link instead, which keeps working wherever the app is.

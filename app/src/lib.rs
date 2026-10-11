@@ -55,12 +55,10 @@ pub fn run() {
             },
         ))
         .plugin(tauri_plugin_deep_link::init())
-        .plugin(
-            tauri_plugin_autostart::Builder::new()
-                .arg("--background")
-                .macos_launcher(tauri_plugin_autostart::MacosLauncher::LaunchAgent)
-                .build(),
-        )
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec!["--background"]),
+        ))
         .plugin(
             tauri_plugin_log::Builder::default()
                 .level(log::LevelFilter::Info)
