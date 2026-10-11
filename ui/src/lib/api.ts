@@ -14,9 +14,25 @@ import type { Project } from '../bindings/Project'
 import type { Preview } from '../bindings/Preview'
 import type { RemoteRepo } from '../bindings/RemoteRepo'
 import type { SafetyReport } from '../bindings/SafetyReport'
+import type { Shortcut } from '../bindings/Shortcut'
 import { mockEngine } from './mockEngine'
 
-export type ProjectView = Project & { running: boolean; url: string | null }
+export type ProjectView = Project & { running: boolean; url: string | null; shortcuts: Shortcut[] }
+
+/** Messages from the app shell (shortcuts, the tray, starting at login) for the main window. */
+export type ShellMessage =
+  | { type: 'launchProblem'; projectId: string; problem: Problem }
+  /** A shortcut asked to launch a project that needs the keys form first. */
+  | { type: 'launchInUi'; projectId: string }
+  /** Quit was chosen while projects are running. */
+  | { type: 'quitRequested' }
+  /** Projects left running when Repo Launcher closed unexpectedly; they were stopped. */
+  | { type: 'orphans'; projectIds: string[] }
+
+export interface ShellSettings {
+  launchAtLogin: boolean
+  platform: 'macos' | 'windows' | 'linux' | (string & {})
+}
 
 export interface EngineApi {
   listProjects(): Promise<ProjectView[]>
@@ -59,7 +75,20 @@ export interface EngineApi {
   aiPreview(id: string): Promise<Preview>
   /** Sends the previewed message (`digest` must match) and saves a validated suggestion. */
   aiSuggest(id: string, digest: string): Promise<AiOutcome>
+  /** Creates (or repairs) the project's shortcuts. */
+  createShortcut(id: string): Promise<Shortcut[]>
+  removeShortcut(id: string): Promise<void>
+  /** Resolves true if Repo Launcher itself was also set to start at login. */
+  setStartAtLogin(id: string, enabled: boolean): Promise<boolean>
+  setUseSystemTerminal(id: string, enabled: boolean): Promise<void>
+  shellSettings(): Promise<ShellSettings>
+  setLaunchAtLogin(enabled: boolean): Promise<void>
+  takeMessages(): Promise<ShellMessage[]>
+  /** Stops every project and quits (after the user confirmed). */
+  quitApp(): Promise<void>
   onEvent(handler: (e: EngineEvent) => void): Promise<() => void>
+  /** Called when the shell has new messages for `takeMessages`. */
+  onShell(handler: () => void): Promise<() => void>
 }
 
 export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
@@ -98,7 +127,16 @@ const tauriApi: EngineApi = {
   openExternal: (url) => invoke('open_external', { url }),
   aiPreview: (id) => invoke('ai_preview', { id }),
   aiSuggest: (id, digest) => invoke('ai_suggest', { id, digest }),
+  createShortcut: (id) => invoke('create_shortcut', { id }),
+  removeShortcut: (id) => invoke('remove_shortcut', { id }),
+  setStartAtLogin: (id, enabled) => invoke('set_start_at_login', { id, enabled }),
+  setUseSystemTerminal: (id, enabled) => invoke('set_use_system_terminal', { id, enabled }),
+  shellSettings: () => invoke('shell_settings'),
+  setLaunchAtLogin: (enabled) => invoke('set_launch_at_login', { enabled }),
+  takeMessages: () => invoke('take_messages'),
+  quitApp: () => invoke('quit_app'),
   onEvent: (handler) => listen<EngineEvent>('engine', (e) => handler(e.payload)),
+  onShell: (handler) => listen('shell', () => handler()),
 }
 
 export const api: EngineApi = isTauri ? tauriApi : mockEngine

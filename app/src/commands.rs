@@ -1,16 +1,18 @@
 //! Thin adapters between the WebView and the engine. No business logic lives here.
 
-use crate::AppState;
+use crate::{AppState, background, exec};
 use launcher_core::ai::Preview;
 use launcher_core::engine::{AiOutcome, AppSettings, EnvVarView};
 use launcher_core::recipe::AppKind;
 use launcher_core::run::LaunchInfo;
 use launcher_core::safety::SafetyReport;
 use launcher_core::source::auth::{DeviceCode, GitHubAccount, RemoteRepo};
+use launcher_core::store::Shortcut;
 use launcher_core::{EngineEvent, EventSink, Problem, ProblemCode, Project};
 use serde::Serialize;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_opener::OpenerExt;
 use tokio_util::sync::CancellationToken;
 
@@ -23,22 +25,29 @@ pub struct ProjectView {
     project: Project,
     running: bool,
     url: Option<String>,
+    shortcuts: Vec<Shortcut>,
 }
 
 fn view(state: &AppState, project: Project) -> ProjectView {
     let running = state.engine.is_running(&project.id);
     let url = state.engine.running_url(&project.id);
+    let shortcuts = state.engine.shortcuts(&project.id).unwrap_or_default();
     ProjectView {
         project,
         running,
         url,
+        shortcuts,
     }
 }
 
-fn sink(app: &AppHandle) -> EventSink {
+pub fn sink(app: &AppHandle) -> EventSink {
     let app = app.clone();
     Arc::new(move |event: EngineEvent| {
+        let state_changed = matches!(event, EngineEvent::RunState { .. });
         let _ = app.emit("engine", event);
+        if state_changed {
+            background::on_run_state(&app);
+        }
     })
 }
 
@@ -102,22 +111,51 @@ fn split_args(args: Option<&str>) -> Vec<String> {
 #[tauri::command]
 pub async fn launch_project(
     app: AppHandle,
-    state: State<'_, AppState>,
     id: String,
     args: Option<String>,
 ) -> Result<LaunchInfo> {
-    let project = state.engine.get(&id)?;
+    launch(&app, &id, args.as_deref()).await
+}
+
+/// Launches a project the way its settings say: web projects open in the browser, terminal
+/// programs in their console window or the system's terminal. Shared by the UI's Launch button
+/// and by shortcuts.
+pub async fn launch(app: &AppHandle, id: &str, args: Option<&str>) -> Result<LaunchInfo> {
+    let state = app.state::<AppState>();
+    let project = state.engine.get(id)?;
     if project.kind == Some(AppKind::Terminal) {
-        open_console_window(&app, &id, &project.name)?;
+        if project.use_system_terminal {
+            // Checked here so problems show in the app; the terminal reads the keys itself.
+            state.engine.exec_command(id, &[]).await?;
+            let scratch = state.engine.paths().project(id).meta();
+            exec::open_in_terminal(&state.launcher.exe, id, &scratch)?;
+            return Ok(LaunchInfo {
+                url: None,
+                port: None,
+            });
+        }
+        open_console_window(app, id, &project.name)?;
     }
     let info = state
         .engine
-        .launch_with(&id, sink(&app), &split_args(args.as_deref()))
+        .launch_with(id, sink(app), &split_args(args))
         .await?;
     if let Some(url) = &info.url {
-        open_in_browser(&app, url)?;
+        open_in_browser(app, url)?;
     }
     Ok(info)
+}
+
+/// Shows a running project: its page in the browser, or its console window.
+pub fn bring_to_front(app: &AppHandle, project: &Project) -> Result<()> {
+    let state = app.state::<AppState>();
+    if let Some(url) = state.engine.running_url(&project.id) {
+        return open_in_browser(app, &url);
+    }
+    if project.kind == Some(AppKind::Terminal) && !project.use_system_terminal {
+        return open_console_window(app, &project.id, &project.name);
+    }
+    Ok(())
 }
 
 /// Terminal programs get their own small window with a real terminal in it.
@@ -362,4 +400,85 @@ pub async fn ai_suggest(
     digest: String,
 ) -> Result<AiOutcome> {
     state.engine.ai_suggest(&id, &digest).await
+}
+
+// --- shortcuts, starting at login, background mode -------------------------------------------
+
+#[tauri::command]
+pub fn create_shortcut(state: State<'_, AppState>, id: String) -> Result<Vec<Shortcut>> {
+    state.engine.create_shortcuts(&id, &state.launcher)
+}
+
+#[tauri::command]
+pub fn remove_shortcut(state: State<'_, AppState>, id: String) -> Result<()> {
+    state.engine.remove_shortcuts(&id)
+}
+
+/// Returns true if Repo Launcher itself was set to start at login so this project can start.
+#[tauri::command]
+pub fn set_start_at_login(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    enabled: bool,
+) -> Result<bool> {
+    state.engine.set_start_at_login(&id, enabled)?;
+    let autostart = app.autolaunch();
+    if enabled && !autostart.is_enabled().unwrap_or(false) {
+        autostart.enable().map_err(login_item_failed)?;
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+#[tauri::command]
+pub fn set_use_system_terminal(
+    state: State<'_, AppState>,
+    id: String,
+    enabled: bool,
+) -> Result<()> {
+    state.engine.set_use_system_terminal(&id, enabled)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellSettings {
+    launch_at_login: bool,
+    /// `macos`, `windows` or `linux`, for wording ("menu bar", "Start menu").
+    platform: &'static str,
+}
+
+#[tauri::command]
+pub fn shell_settings(app: AppHandle) -> ShellSettings {
+    ShellSettings {
+        launch_at_login: app.autolaunch().is_enabled().unwrap_or(false),
+        platform: std::env::consts::OS,
+    }
+}
+
+#[tauri::command]
+pub fn set_launch_at_login(app: AppHandle, enabled: bool) -> Result<()> {
+    let autostart = app.autolaunch();
+    if enabled {
+        autostart.enable()
+    } else {
+        autostart.disable()
+    }
+    .map_err(login_item_failed)
+}
+
+fn login_item_failed(e: impl std::fmt::Display) -> Problem {
+    Problem::new(ProblemCode::LoginItemFailed).detail(e)
+}
+
+/// Messages queued for the main window (see `background::UiMessage`).
+#[tauri::command]
+pub fn take_messages(state: State<'_, AppState>) -> Vec<background::UiMessage> {
+    std::mem::take(&mut *state.messages.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
+/// The user confirmed quitting while projects run.
+#[tauri::command]
+pub fn quit_app(app: AppHandle) {
+    background::quit_now(&app);
 }

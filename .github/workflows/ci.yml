@@ -75,7 +75,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev xvfb dbus
       - run: pnpm install --frozen-lockfile
       - name: Engine unit tests
         run: cargo test -p launcher-core -p rl
@@ -84,4 +84,10 @@ jobs:
         env:
           RL_TEST_HOME: ${{ runner.temp }}/rl-home
       - name: Build the desktop app
-        run: pnpm tauri build --debug --no-bundle
+        # macOS needs the .app bundle: repolauncher:// links are registered through it.
+        run: pnpm tauri build --debug ${{ runner.os == 'macOS' && '--bundles app' || '--no-bundle' }}
+      - name: A shortcut starts a web project without the main window
+        shell: bash
+        run: |
+          cargo build -p rl
+          scripts/shortcut-smoke.sh

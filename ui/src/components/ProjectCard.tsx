@@ -37,12 +37,18 @@ export function ProjectCard({
   project: p,
   live,
   actions,
+  platform,
   onFix,
+  onAppStartsAtLogin,
 }: {
   project: ProjectView
   live?: Live
   actions: Projects
+  /** `macos`, `windows` or `linux`, for wording. */
+  platform: string
   onFix: (p: Problem) => void
+  /** Repo Launcher itself was set to start at login, so this project can start. */
+  onAppStartsAtLogin: () => void
 }) {
   const { t } = useTranslation()
   const [activityOpen, setActivityOpen] = useState(false)
@@ -95,7 +101,7 @@ export function ProjectCard({
 
       {live?.notice && (
         <p role="status" className="flex items-center justify-between rounded-lg bg-accent-soft px-3 py-2 text-sm text-fg">
-          {t(`update.${live.notice}`)}
+          {t(live.notice.key, live.notice.params)}
           <button type="button" className="text-muted hover:text-fg" onClick={() => actions.dismissNotice(p.id)}>
             {t('problem.dismiss')}
           </button>
@@ -131,7 +137,7 @@ export function ProjectCard({
               sideOffset={4}
               className="min-w-44 rounded-lg border border-border bg-surface p-1 text-sm shadow-card"
             >
-              {p.kind === 'terminal' && (
+              {p.kind === 'terminal' && !p.useSystemTerminal && (
                 <DropdownMenu.Item onSelect={() => actions.openConsole(p.id)} className="cursor-default rounded-md px-3 py-2 outline-none data-disabled:opacity-50 data-highlighted:bg-sunken">
                   {t('action.openConsole')}
                 </DropdownMenu.Item>
@@ -150,6 +156,32 @@ export function ProjectCard({
                 <DropdownMenu.Item disabled={installing} onSelect={() => actions.repair(p.id)} className="cursor-default rounded-md px-3 py-2 outline-none data-disabled:opacity-50 data-highlighted:bg-sunken">
                   {t('action.repair')}
                 </DropdownMenu.Item>
+              )}
+              {p.status === 'installed' && (
+                <>
+                  <DropdownMenu.Separator className="my-1 h-px bg-border" />
+                  <DropdownMenu.Item onSelect={() => actions.toggleShortcut(p.id, platform)} className="cursor-default rounded-md px-3 py-2 outline-none data-disabled:opacity-50 data-highlighted:bg-sunken">
+                    {p.shortcuts.length ? t('action.removeShortcut') : t('action.createShortcut')}
+                  </DropdownMenu.Item>
+                  <DropdownMenu.CheckboxItem
+                    checked={p.startAtLogin}
+                    onSelect={() => actions.toggleStartAtLogin(p.id, onAppStartsAtLogin)}
+                    className="flex cursor-default items-center gap-2 rounded-md px-3 py-2 outline-none data-highlighted:bg-sunken"
+                  >
+                    {t('action.startAtLogin')}
+                    <CheckMark checked={p.startAtLogin} />
+                  </DropdownMenu.CheckboxItem>
+                  {p.kind === 'terminal' && (
+                    <DropdownMenu.CheckboxItem
+                      checked={p.useSystemTerminal}
+                      onSelect={() => actions.toggleSystemTerminal(p.id)}
+                      className="flex cursor-default items-center gap-2 rounded-md px-3 py-2 outline-none data-highlighted:bg-sunken"
+                    >
+                      {t('action.useSystemTerminal')}
+                      <CheckMark checked={p.useSystemTerminal} />
+                    </DropdownMenu.CheckboxItem>
+                  )}
+                </>
               )}
               <DropdownMenu.Separator className="my-1 h-px bg-border" />
               <DropdownMenu.Item
@@ -173,6 +205,15 @@ export function ProjectCard({
       <ActivitySheet projectId={p.id} name={p.name} open={activityOpen} onOpenChange={setActivityOpen} />
       <RemoveDialog name={p.name} open={removeOpen} onOpenChange={setRemoveOpen} onConfirm={() => actions.remove(p.id)} />
     </article>
+  )
+}
+
+/** A checkbox menu item's mark, at the end so labels line up with the other items. */
+function CheckMark({ checked }: { checked: boolean }) {
+  return (
+    <span aria-hidden className="ml-auto inline-block w-3 pl-3 text-accent">
+      {checked ? '✓' : ''}
+    </span>
   )
 }
 

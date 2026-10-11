@@ -18,8 +18,8 @@ export interface Live {
   busy?: Busy
   /** What to repeat when the user clicks "Try again". */
   lastAction?: Action
-  /** A short, non-error message such as "You have the latest version." */
-  notice?: 'upToDate' | 'updated' | null
+  /** A short, non-error message such as "You have the latest version.": an i18n key. */
+  notice?: { key: string; params?: Record<string, string> } | null
 }
 
 /** The safety gate waiting for the user's decision. */
@@ -267,7 +267,7 @@ export function useProjects() {
       try {
         if (action === 'update') {
           const updated = await api.updateProject(id)
-          patch(id, { notice: updated ? 'updated' : 'upToDate' })
+          patch(id, { notice: { key: updated ? 'update.updated' : 'update.upToDate' } })
         } else {
           dispatch({ type: 'status', id, status: 'installing' })
           await api.repairProject(id)
@@ -287,6 +287,62 @@ export function useProjects() {
       }
     },
     [patch, refresh, install],
+  )
+
+  /** Re-reads one project (its shortcuts and settings changed). */
+  const reload = useCallback(async (id: string) => {
+    dispatch({ type: 'upsert', project: await api.getProject(id) })
+  }, [])
+
+  /** Adds or removes the project's shortcut; `platform` picks the confirmation's wording. */
+  const toggleShortcut = useCallback(
+    async (id: string, platform: string) => {
+      const p = projectsRef.current.find((x) => x.id === id)
+      if (!p) return
+      try {
+        if (p.shortcuts.length) {
+          await api.removeShortcut(id)
+          patch(id, { notice: { key: 'shortcut.removed' }, problem: null })
+        } else {
+          await api.createShortcut(id)
+          const key = ['macos', 'windows', 'linux'].includes(platform) ? platform : 'linux'
+          patch(id, { notice: { key: `shortcut.created.${key}`, params: { name: p.name } }, problem: null })
+        }
+      } catch (err) {
+        patch(id, { problem: toProblem(err) })
+      }
+      await reload(id)
+    },
+    [patch, reload],
+  )
+
+  /** Calls `onAppTurnedOn` when Repo Launcher itself had to be set to start at login too. */
+  const toggleStartAtLogin = useCallback(
+    async (id: string, onAppTurnedOn: () => void) => {
+      const p = projectsRef.current.find((x) => x.id === id)
+      if (!p) return
+      try {
+        const turnedOn = await api.setStartAtLogin(id, !p.startAtLogin)
+        if (turnedOn) {
+          patch(id, { notice: { key: 'login.appTurnedOn', params: { name: p.name } } })
+          onAppTurnedOn()
+        }
+      } catch (err) {
+        patch(id, { problem: toProblem(err) })
+      }
+      await reload(id)
+    },
+    [patch, reload],
+  )
+
+  const toggleSystemTerminal = useCallback(
+    async (id: string) => {
+      const p = projectsRef.current.find((x) => x.id === id)
+      if (!p) return
+      await api.setUseSystemTerminal(id, !p.useSystemTerminal).catch((err) => patch(id, { problem: toProblem(err) }))
+      await reload(id)
+    },
+    [patch, reload],
   )
 
   const retry = useCallback(
@@ -319,6 +375,11 @@ export function useProjects() {
     update: (id: string) => reinstall(id, 'update'),
     repair: (id: string) => reinstall(id, 'repair'),
     openConsole: (id: string) => api.openConsole(id).catch((err) => patch(id, { problem: toProblem(err) })),
+    toggleShortcut,
+    toggleStartAtLogin,
+    toggleSystemTerminal,
+    /** A problem from a launch started outside the window (a shortcut, login). */
+    showProblem: (id: string, problem: Problem) => patch(id, { problem, lastAction: 'launch' }),
     dismissNotice: (id: string) => patch(id, { notice: null }),
     dismissProblem: (id: string) => patch(id, { problem: null }),
   }

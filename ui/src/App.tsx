@@ -5,7 +5,9 @@ import { AddBar } from './components/AddBar'
 import { AiDialog, type AiTarget } from './components/AiDialog'
 import { Button } from './components/Button'
 import { KeysDialog } from './components/KeysDialog'
+import { ProblemNotice } from './components/ProblemNotice'
 import { ProjectCard } from './components/ProjectCard'
+import { QuitDialog } from './components/QuitDialog'
 import { SafetyDialog } from './components/SafetyDialog'
 import { SettingsDialog } from './components/SettingsDialog'
 import { SignInDialog } from './components/SignInDialog'
@@ -13,6 +15,7 @@ import { YourProjects } from './components/YourProjects'
 import { api } from './lib/api'
 import { useAccount } from './state/useAccount'
 import { useProjects } from './state/useProjects'
+import { useShell } from './state/useShell'
 
 type Tab = 'library' | 'yours'
 
@@ -26,6 +29,26 @@ export default function App() {
   const empty = projects.loaded && projects.projects.length === 0
   const added = useMemo(() => new Set(projects.projects.map((p) => p.source)), [projects.projects])
   const showTabs = account.account != null
+  const [quitOpen, setQuitOpen] = useState(false)
+  const [orphans, setOrphans] = useState<string[]>([])
+  /** A shortcut's problem with no project card to show it on (a removed project). */
+  const [shellProblem, setShellProblem] = useState<Problem | null>(null)
+  const shell = useShell({
+    onLaunchProblem: (id, problem) => {
+      setTab('library')
+      if (projects.projects.some((p) => p.id === id)) projects.showProblem(id, problem)
+      else setShellProblem(problem)
+    },
+    onLaunchInUi: (id) => {
+      setTab('library')
+      void projects.launch(id)
+    },
+    onQuitRequested: () => setQuitOpen(true),
+    onOrphans: setOrphans,
+  })
+  const platform = shell.settings?.platform ?? 'linux'
+  const running = projects.projects.filter((p) => p.running)
+  const nameOf = (id: string) => projects.projects.find((p) => p.id === id)?.name ?? id
 
   /** Carries out a problem's suggested fix. Resolves true if the failed action should be retried. */
   const fix = useCallback(
@@ -82,6 +105,7 @@ export default function App() {
               variant="ghost"
               onClick={() => {
                 void account.refresh()
+                void shell.refresh()
                 setSettingsOpen(true)
               }}
             >
@@ -112,6 +136,19 @@ export default function App() {
 
       <main className="flex-1 overflow-auto px-6 py-6">
         <div className="mx-auto max-w-5xl">
+          {shellProblem && (
+            <div className="mb-4">
+              <ProblemNotice problem={shellProblem} onDismiss={() => setShellProblem(null)} />
+            </div>
+          )}
+          {orphans.length > 0 && (
+            <p role="status" className="mb-4 flex items-center justify-between gap-3 rounded-lg bg-accent-soft px-4 py-3 text-sm">
+              {t('orphans.body', { count: orphans.length, names: orphans.map(nameOf).join(', ') })}
+              <button type="button" className="shrink-0 text-muted hover:text-fg" onClick={() => setOrphans([])}>
+                {t('problem.dismiss')}
+              </button>
+            </p>
+          )}
           {tab === 'yours' && showTabs ? (
             <YourProjects
               installUrl={account.settings?.githubInstallUrl ?? null}
@@ -140,7 +177,9 @@ export default function App() {
                     project={p}
                     live={projects.live[p.id]}
                     actions={projects}
+                    platform={platform}
                     onFix={(problem) => void fix(problem, p.id)}
+                    onAppStartsAtLogin={() => void shell.refresh()}
                   />
                 ))}
               </div>
@@ -162,7 +201,13 @@ export default function App() {
         }}
         onFix={(p) => void fix(p, aiTarget?.projectId)}
       />
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} account={account} />
+      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} account={account} shell={shell} />
+      <QuitDialog
+        running={running.map((p) => p.name)}
+        open={quitOpen}
+        onOpenChange={setQuitOpen}
+        onConfirm={() => void api.quitApp()}
+      />
     </div>
   )
 }

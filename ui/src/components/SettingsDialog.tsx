@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { Problem } from '../bindings/Problem'
 import { api, toProblem } from '../lib/api'
 import type { Account } from '../state/useAccount'
+import type { Shell } from '../state/useShell'
 import { Button } from './Button'
 import { Modal } from './Modal'
 import { ProblemNotice } from './ProblemNotice'
@@ -11,9 +12,10 @@ interface Props {
   open: boolean
   onClose: () => void
   account: Account
+  shell: Shell
 }
 
-export function SettingsDialog({ open, onClose, account }: Props) {
+export function SettingsDialog({ open, onClose, account, shell }: Props) {
   const { t } = useTranslation()
   const s = account.settings
   const [aiKey, setAiKey] = useState('')
@@ -45,6 +47,30 @@ export function SettingsDialog({ open, onClose, account }: Props) {
       <div className="flex flex-col gap-6 text-sm">
         {s?.keychainProblem && <ProblemNotice problem={s.keychainProblem} />}
         {problem && <ProblemNotice problem={problem} onDismiss={() => setProblem(null)} />}
+
+        <section aria-labelledby="settings-startup" className="flex flex-col gap-2">
+          <h3 id="settings-startup" className="font-semibold">
+            {t('settings.startup.heading')}
+          </h3>
+          <label className="flex items-start gap-2">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={shell.settings?.launchAtLogin ?? false}
+              onChange={(e) => run(() => shell.setLaunchAtLogin(e.target.checked))}
+            />
+            <span>
+              {t('settings.startup.launchAtLogin')}
+              <span className="block text-xs text-muted">
+                {t('settings.startup.why', {
+                  place: t(`settings.startup.place.${shell.settings?.platform ?? 'linux'}`, {
+                    defaultValue: t('settings.startup.place.linux'),
+                  }),
+                })}
+              </span>
+            </span>
+          </label>
+        </section>
 
         <section aria-labelledby="settings-github" className="flex flex-col gap-2">
           <h3 id="settings-github" className="font-semibold">

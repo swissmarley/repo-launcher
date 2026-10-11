@@ -7,7 +7,7 @@ import type { EnvVarView } from '../bindings/EnvVarView'
 import type { GitHubAccount } from '../bindings/GitHubAccount'
 import type { Problem } from '../bindings/Problem'
 import type { SafetyReport } from '../bindings/SafetyReport'
-import type { EngineApi, ProjectView } from './api'
+import type { EngineApi, ProjectView, ShellMessage } from './api'
 
 const handlers = new Set<(e: EngineEvent) => void>()
 const projects = new Map<string, ProjectView>()
@@ -21,6 +21,8 @@ let aiEnabled = false
 let aiKey = false
 let signInCancelled = false
 const aiPlans = new Set<string>()
+let launchAtLogin = false
+const shellMessages: ShellMessage[] = []
 
 const emit = (e: EngineEvent) => handlers.forEach((h) => h(e))
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -138,8 +140,11 @@ export const mockEngine: EngineApi = {
       kind: null,
       createdAt: now,
       updatedAt: now,
+      startAtLogin: false,
+      useSystemTerminal: false,
       running: false,
       url: null,
+      shortcuts: [],
     }
     projects.set(p.id, p)
     return p
@@ -354,6 +359,45 @@ export const mockEngine: EngineApi = {
     await sleep(800)
     aiPlans.add(id)
     return { recipeSaved: true, explanation: 'A small notes web app started with “python notes.py serve”.' }
+  },
+
+  async createShortcut(id) {
+    const p = get(id)
+    p.shortcuts = [{ projectId: id, kind: 'applications', path: `~/Applications/${p.name}.app` }]
+    return p.shortcuts
+  },
+
+  async removeShortcut(id) {
+    get(id).shortcuts = []
+  },
+
+  async setStartAtLogin(id, enabled) {
+    get(id).startAtLogin = enabled
+    const turnedOn = enabled && !launchAtLogin
+    if (enabled) launchAtLogin = true
+    return turnedOn
+  },
+
+  async setUseSystemTerminal(id, enabled) {
+    get(id).useSystemTerminal = enabled
+  },
+
+  async shellSettings() {
+    return { launchAtLogin, platform: 'macos' }
+  },
+
+  async setLaunchAtLogin(enabled) {
+    launchAtLogin = enabled
+  },
+
+  async takeMessages() {
+    return shellMessages.splice(0)
+  },
+
+  async quitApp() {},
+
+  async onShell() {
+    return () => {}
   },
 
   async openExternal(url) {
