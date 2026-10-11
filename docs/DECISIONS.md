@@ -193,3 +193,41 @@ decline is retried server-side. `stop_reason` is checked (refusal, truncation) b
 is read. The answer is parsed by the same validator as an author's own `launcher.json`, saved
 as `meta/ai-launcher.json`, used only when the project has neither its own file nor a heuristic
 match, and always shown as a red "suggested by AI" signal that needs typed confirmation.
+
+### D-034 · Shortcuts start the Launcher directly on Windows and Linux, a link on macOS — 2026-10-11
+Windows `.lnk` and Linux `.desktop` shortcuts run the Launcher with `--launch <id>`; nothing has
+to be registered for them to work, and they are rewritten at startup if the app moves (an
+AppImage). The macOS shortcut is a tiny app in ~/Applications whose script runs
+`open repolauncher://launch/<id>`, so LaunchServices finds the Launcher wherever it is. Each file
+is recorded in the `shortcuts` table, so removing a project (or `rl remove-shortcuts`) removes
+it; a shortcut the user deleted is forgotten, never recreated. Existing files that aren't ours
+are never overwritten: a numbered name is used instead.
+
+### D-035 · Projects left running by a crash are stopped, not adopted — 2026-10-11
+PLAN §7.1 offered "Still running: Stop / Keep". Tried on macOS: a project that outlived the
+Launcher still runs, but its output went to the Launcher that is gone, so a server that logs each
+request (Python's `http.server`, most dev servers) fails every request with a broken pipe while
+looking "Running". So on the next start, runs whose process is verifiably ours (pid plus process
+start time plus boot time; on POSIX the whole process group) are stopped, and the user is told
+once. A pid reused by another program is never touched. A shortcut that started the Launcher
+then launches a fresh, working copy. On Windows the job object's kill-on-close normally means
+nothing survives a crash at all.
+
+### D-036 · Closing the window: stay in the tray while projects run or after a login start — 2026-10-11
+Closing the main window hides it while projects run (D-005), and also when the Launcher was
+started at login with a working tray icon, since being there is the point. Otherwise closing it
+quits, which is what people expect and what keeps the app reachable on desktops without a tray
+(GNOME without an extension). Starting the Launcher again always shows the window.
+
+### D-037 · macOS: our ⌘Q asks first; a system quit can't be held back — 2026-10-11
+Tauri's windowing layer doesn't implement `applicationShouldTerminate`, so a quit coming from
+macOS itself (logging out, an Apple Event, the Dock) can't be delayed for a question. The app
+menu's Quit is therefore our own item, which asks when projects are running. Every way of
+quitting still stops all projects first (`RunEvent::Exit`), recorded as `app_quit`.
+
+### D-038 · "Open in my terminal" runs the Launcher headless, outside its supervision — 2026-10-11
+The system terminal runs `repo-launcher --exec <id>` (D-023): the same binary, without Tauri. It
+reads the keys from the keychain itself and gives them only to the program it starts; the script
+macOS's Terminal needs (`open-in-terminal.command`) holds just the app's path and the project id.
+These runs belong to that terminal window (closing it ends them) and aren't shown as running in
+the app. This is the one exception to D-004, by design: the user chose their own terminal.

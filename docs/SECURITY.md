@@ -190,6 +190,23 @@ suggest a plan, using **your own** Anthropic key from the keychain.
   where it is always a red warning ("suggested by AI") that needs typed confirmation.
 - Nothing suggested by AI ever runs without that confirmation.
 
+## Shortcuts, links and background mode
+
+- **Links.** Repo Launcher registers `repolauncher://`. The only link it acts on is
+  `repolauncher://launch/<id>`, and it only ever **launches a project that is already installed
+  and approved**: a link can't add, install, update or change anything. Project ids are 8 random
+  characters, and browsers ask before opening an app from a link. A link for an unknown id shows
+  the main window with "That project isn't in your library anymore."
+- **Shortcuts** start the app (`--launch <id>` on Windows and Linux, the link on macOS). They
+  contain no keys and no project files.
+- **"Open in my terminal"** runs `repo-launcher --exec <id>` in the system's terminal. That
+  process reads the project's keys from the keychain at run time and passes them only to the
+  program it starts, in memory. Nothing with a key in it is written: on macOS the small
+  `open-in-terminal.command` script that Terminal runs contains only the app's path and the id.
+- **After a crash**, projects that kept running are recognized by pid, process start time and
+  boot time (on POSIX the whole process group), and stopped. A pid that now belongs to another
+  program is never signalled.
+
 ## Supply chain
 
 - Runtimes (uv, Node, bun, Go) are pinned with SHA-256 hashes compiled into the app; Python
@@ -207,7 +224,13 @@ Repo Launcher keeps everything in its own data folder, with these known exceptio
 - **Keychain entries**, listed above, deleted on project removal / full uninstall.
 - **Go** writes its telemetry and configuration to the OS user configuration folder
   (`go/telemetry`, `go/env`); Go offers no way to redirect this.
-- **Shortcuts** you ask for (Phase 4).
+- **Shortcuts** you ask for: `.lnk` files in the Start menu (`Repo Launcher` folder) and on the
+  desktop on Windows, a `.desktop` file in `~/.local/share/applications` on Linux, an app in
+  `~/Applications` on macOS. Removing the project removes them.
+- **Start at login**, if you turn it on: a Launch Agent in `~/Library/LaunchAgents` (macOS), a
+  `Run` registry value (Windows) or an autostart `.desktop` file (Linux).
+- **The `repolauncher://` link handler**: registered by the installer (and, for development builds
+  and AppImages, by the app itself in the per-user registry or applications folder).
 - Anything a project itself writes elsewhere: projects run as you.
 
 ## Known limits (v1)
