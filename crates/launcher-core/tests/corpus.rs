@@ -39,6 +39,13 @@ fn slug(url: &str) -> String {
     s
 }
 
+/// Windows builds get an `.exe` suffix; expectations are written without it.
+fn os_neutral(argv: &[String]) -> Vec<String> {
+    argv.iter()
+        .map(|a| a.strip_suffix(".exe").unwrap_or(a).to_owned())
+        .collect()
+}
+
 fn tree_of(dir: &Path) -> FileTree {
     let listing = std::fs::read_to_string(dir.join("tree.txt")).expect("snapshot listing");
     FileTree::from_parts(&dir.join("files"), listing.lines().map(str::to_owned))
@@ -87,7 +94,10 @@ fn corpus_expectations() {
                 };
                 let want_kind = e.kind.as_deref().unwrap_or("<missing>");
                 let want_run = e.run.clone().unwrap_or_default();
-                if kind != want_kind || !r.run.argv.starts_with(&want_run) || want_run.is_empty() {
+                if kind != want_kind
+                    || !os_neutral(&r.run.argv).starts_with(&want_run)
+                    || want_run.is_empty()
+                {
                     failures.push(format!(
                         "{}: expected {want_kind} {want_run:?}, got {got}",
                         e.url
