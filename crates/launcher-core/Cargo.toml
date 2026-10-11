@@ -1,0 +1,33 @@
+[package]
+name = "launcher-core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+dirs = "7.0.0"
+flate2 = "1.1.10"
+futures-util = "0.3.34"
+hex = "0.4.3"
+process-wrap = { version = "10.0.1", features = ["tokio1"] }
+reqwest = { version = "0.13.5", features = ["stream", "json"] }
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.152"
+sha2 = "0.11.0"
+tar = "0.4.46"
+thiserror = "2.0.21"
+tokio = { version = "1.53.2", features = ["rt-multi-thread", "macros", "process", "io-util", "fs", "time", "sync", "net"] }
+tokio-util = "0.7.20"
+toml = "1.1.8"
+tracing = "0.1.44"
+url = "2.5.8"
+uuid = { version = "1.28.0", features = ["v4"] }
+zip = "9.0.1"
+
+[dev-dependencies]
+reqwest = "0.13.5"
+tempfile = "3.27.0"
+tokio = { version = "1.53.2", features = ["rt-multi-thread", "macros", "test-util"] }
+
+[target."cfg(windows)".dependencies]
+windows = { version = "0.62", features = ["Win32_System_Threading"] }
