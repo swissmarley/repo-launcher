@@ -123,6 +123,32 @@ export const mockEngine: EngineApi = {
     return logs.get(id) ?? []
   },
 
+  async getProject(id) {
+    return { ...get(id) }
+  },
+
+  async openConsole() {},
+
+  async consoleWrite(id, data) {
+    // Echo like a terminal would, so the console can be tried in a browser.
+    emit({ type: 'console', projectId: id, data: data === '\r' ? '\r\n' : data })
+  },
+
+  async consoleResize() {},
+
+  async consoleScrollback() {
+    return 'Hello from the mock console\r\n$ '
+  },
+
+  async updateProject() {
+    await sleep(800)
+    return false
+  },
+
+  async repairProject(id) {
+    return mockEngine.installProject(id)
+  },
+
   async onEvent(handler) {
     handlers.add(handler)
     return () => handlers.delete(handler)

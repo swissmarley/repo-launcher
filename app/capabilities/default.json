@@ -2,6 +2,6 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "The main window may call the app's own commands and listen to events. It gets no shell, filesystem or opener access.",
-  "windows": ["main"],
+  "windows": ["main", "console-*"],
   "permissions": ["core:default"]
 }

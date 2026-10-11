@@ -37,7 +37,10 @@
     "showActivity": "Show activity",
     "remove": "Remove",
     "more": "More actions for {{name}}",
-    "close": "Close"
+    "close": "Close",
+    "openConsole": "Open console",
+    "checkUpdates": "Check for updates",
+    "repair": "Install again"
   },
   "stage": {
     "downloading": "Downloading",
@@ -158,5 +161,20 @@
     "repair": "Install again",
     "checkConnection": "Try again",
     "waitAndRetry": "Try again"
+  },
+  "console": {
+    "terminal": "Program output and input",
+    "options": "Options for the next run",
+    "optionsPlaceholder": "Options (optional), e.g. --help",
+    "runAgain": "Run again",
+    "status": {
+      "running": "Running",
+      "finished": "Finished",
+      "stopped": "Stopped"
+    }
+  },
+  "update": {
+    "upToDate": "You have the latest version.",
+    "updated": "Updated to the latest version."
   }
 }

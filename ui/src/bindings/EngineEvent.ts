@@ -4,4 +4,4 @@ import type { RunState } from "./RunState";
 import type { Stage } from "./Stage";
 import type { StepLabel } from "./StepLabel";
 
-export type EngineEvent = { "type": "progress", projectId: string, stage: Stage, fraction: number, label: StepLabel | null, } | { "type": "log", projectId: string, stream: LogStream, line: string, } | { "type": "runState", projectId: string, state: RunState, url: string | null, exitCode: number | null, };
+export type EngineEvent = { "type": "progress", projectId: string, stage: Stage, fraction: number, label: StepLabel | null, } | { "type": "log", projectId: string, stream: LogStream, line: string, } | { "type": "console", projectId: string, data: string, } | { "type": "runState", projectId: string, state: RunState, url: string | null, exitCode: number | null, };

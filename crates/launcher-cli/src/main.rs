@@ -159,6 +159,8 @@ fn printer() -> EventSink {
             eprintln!("[{:>3.0}%] {stage:?}{label}", fraction * 100.0);
         }
         EngineEvent::Log { line, .. } => eprintln!("  | {line}"),
+        // Console output also arrives as plain log lines; the raw stream is for the GUI.
+        EngineEvent::Console { .. } => {}
         EngineEvent::RunState {
             state,
             url,

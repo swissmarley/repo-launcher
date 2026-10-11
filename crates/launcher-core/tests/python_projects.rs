@@ -122,3 +122,37 @@ fn alive(pid: u32) -> bool {
             .unwrap_or(false)
     }
 }
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "downloads runtimes and packages"]
+async fn console_is_interactive() {
+    let engine = engine();
+    let id = install(&engine, "py-prompt").await;
+    engine.launch(&id, null_sink()).await.unwrap();
+    let mut asked = false;
+    for _ in 0..100 {
+        if engine
+            .console_scrollback(&id)
+            .contains("What is your name?")
+        {
+            asked = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(
+        asked,
+        "prompt never appeared: {:?}",
+        engine.console_scrollback(&id)
+    );
+    engine.console_write(&id, "Ada\r").unwrap();
+    for _ in 0..100 {
+        if !engine.is_running(&id) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let out = engine.run_history(&id).join("\n");
+    assert!(out.contains("Hello, Ada!"), "{out}");
+    engine.uninstall(&id).await.unwrap();
+}

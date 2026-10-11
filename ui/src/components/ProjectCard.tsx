@@ -22,7 +22,7 @@ const dotColor: Record<StatusKey, string> = {
 }
 
 function statusOf(p: ProjectView, live: Live | undefined): StatusKey {
-  if (live?.busy === 'install' || p.status === 'installing') return 'installing'
+  if (live?.busy === 'install' || live?.busy === 'update' || p.status === 'installing') return 'installing'
   if (live?.busy === 'launch' || live?.runState === 'starting') return 'starting'
   if (p.running) return 'running'
   return p.status
@@ -77,6 +77,15 @@ export function ProjectCard({ project: p, live, actions }: { project: ProjectVie
         </div>
       )}
 
+      {live?.notice && (
+        <p role="status" className="flex items-center justify-between rounded-lg bg-accent-soft px-3 py-2 text-sm text-fg">
+          {t(`update.${live.notice}`)}
+          <button type="button" className="text-muted hover:text-fg" onClick={() => actions.dismissNotice(p.id)}>
+            {t('problem.dismiss')}
+          </button>
+        </p>
+      )}
+
       {live?.problem && (
         <ProblemNotice
           problem={live.problem}
@@ -106,6 +115,22 @@ export function ProjectCard({ project: p, live, actions }: { project: ProjectVie
               sideOffset={4}
               className="min-w-44 rounded-lg border border-border bg-surface p-1 text-sm shadow-card"
             >
+              {p.kind === 'terminal' && (
+                <DropdownMenu.Item onSelect={() => actions.openConsole(p.id)} className="cursor-default rounded-md px-3 py-2 outline-none data-disabled:opacity-50 data-highlighted:bg-sunken">
+                  {t('action.openConsole')}
+                </DropdownMenu.Item>
+              )}
+              {p.owner && (
+                <DropdownMenu.Item disabled={installing} onSelect={() => actions.update(p.id)} className="cursor-default rounded-md px-3 py-2 outline-none data-disabled:opacity-50 data-highlighted:bg-sunken">
+                  {t('action.checkUpdates')}
+                </DropdownMenu.Item>
+              )}
+              {p.status !== 'added' && (
+                <DropdownMenu.Item disabled={installing} onSelect={() => actions.repair(p.id)} className="cursor-default rounded-md px-3 py-2 outline-none data-disabled:opacity-50 data-highlighted:bg-sunken">
+                  {t('action.repair')}
+                </DropdownMenu.Item>
+              )}
+              <DropdownMenu.Separator className="my-1 h-px bg-border" />
               <DropdownMenu.Item
                 onSelect={() => setActivityOpen(true)}
                 className="cursor-default rounded-md px-3 py-2 outline-none data-highlighted:bg-sunken"

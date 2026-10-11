@@ -5,7 +5,7 @@ pub mod manifest;
 mod node;
 mod python;
 pub mod pyversion;
-mod shell_words;
+pub mod shell_words;
 
 use crate::detect::{DetectionReport, Ecosystem};
 use crate::problem::{Problem, ProblemCode};

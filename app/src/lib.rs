@@ -40,6 +40,13 @@ pub fn run() {
             commands::stop_project,
             commands::uninstall_project,
             commands::project_log,
+            commands::get_project,
+            commands::open_console,
+            commands::console_write,
+            commands::console_resize,
+            commands::console_scrollback,
+            commands::update_project,
+            commands::repair_project,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build the app");

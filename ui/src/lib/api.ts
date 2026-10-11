@@ -15,11 +15,19 @@ export interface EngineApi {
   addProject(input: string): Promise<ProjectView>
   installProject(id: string): Promise<ProjectView>
   cancelInstall(id: string): Promise<void>
-  launchProject(id: string): Promise<LaunchInfo>
+  launchProject(id: string, args?: string): Promise<LaunchInfo>
   openProject(id: string): Promise<void>
   stopProject(id: string): Promise<void>
   uninstallProject(id: string): Promise<void>
   projectLog(id: string): Promise<string[]>
+  getProject(id: string): Promise<ProjectView>
+  openConsole(id: string): Promise<void>
+  consoleWrite(id: string, data: string): Promise<void>
+  consoleResize(id: string, cols: number, rows: number): Promise<void>
+  consoleScrollback(id: string): Promise<string>
+  /** Resolves true if a newer version was installed. */
+  updateProject(id: string): Promise<boolean>
+  repairProject(id: string): Promise<ProjectView>
   onEvent(handler: (e: EngineEvent) => void): Promise<() => void>
 }
 
@@ -30,11 +38,18 @@ const tauriApi: EngineApi = {
   addProject: (input) => invoke('add_project', { input }),
   installProject: (id) => invoke('install_project', { id }),
   cancelInstall: (id) => invoke('cancel_install', { id }),
-  launchProject: (id) => invoke('launch_project', { id }),
+  launchProject: (id, args) => invoke('launch_project', { id, args: args ?? null }),
   openProject: (id) => invoke('open_project', { id }),
   stopProject: (id) => invoke('stop_project', { id }),
   uninstallProject: (id) => invoke('uninstall_project', { id }),
   projectLog: (id) => invoke('project_log', { id }),
+  getProject: (id) => invoke('get_project', { id }),
+  openConsole: (id) => invoke('open_console', { id }),
+  consoleWrite: (id, data) => invoke('console_write', { id, data }),
+  consoleResize: (id, cols, rows) => invoke('console_resize', { id, cols, rows }),
+  consoleScrollback: (id) => invoke('console_scrollback', { id }),
+  updateProject: (id) => invoke('update_project', { id }),
+  repairProject: (id) => invoke('repair_project', { id }),
   onEvent: (handler) => listen<EngineEvent>('engine', (e) => handler(e.payload)),
 }
 

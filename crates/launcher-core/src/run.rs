@@ -1,5 +1,6 @@
 //! Launching and supervising running projects.
 
+use crate::console;
 use crate::diagnose;
 use crate::env::project_env;
 use crate::events::{EngineEvent, EventSink, LogStream, RunState};
@@ -33,6 +34,43 @@ struct Running {
     history: Arc<Mutex<VecDeque<String>>>,
     /// The address that answered, once known.
     url: Arc<Mutex<Option<String>>>,
+    console: Option<Arc<console::Console>>,
+}
+
+/// A running project process: piped (web/desktop apps) or in a pseudo-terminal (terminal apps).
+enum Child {
+    Piped(
+        Box<dyn process_wrap::tokio::ChildWrapper>,
+        Vec<tokio::task::JoinHandle<()>>,
+    ),
+    Pty(console::PtyChild),
+}
+
+impl Child {
+    async fn wait(&mut self) -> Option<i32> {
+        match self {
+            Child::Piped(c, _) => c.wait().await.ok().and_then(|s| s.code()),
+            Child::Pty(p) => p.wait().await,
+        }
+    }
+
+    async fn stop_tree(&mut self) {
+        match self {
+            Child::Piped(c, _) => {
+                let _ = proc::stop_tree(c, STOP_GRACE).await;
+            }
+            Child::Pty(p) => p.stop_tree(STOP_GRACE).await,
+        }
+    }
+
+    /// Lets output readers finish, without waiting forever on a lingering grandchild.
+    async fn drain(&mut self) {
+        if let Child::Piped(_, pumps) = self {
+            for p in pumps.drain(..) {
+                let _ = tokio::time::timeout(Duration::from_secs(2), p).await;
+            }
+        }
+    }
 }
 
 type Urls = Arc<Mutex<Vec<String>>>;
@@ -49,6 +87,8 @@ pub struct LaunchRequest<'a> {
     pub project_id: &'a str,
     pub recipe: &'a Recipe,
     pub tools: &'a crate::runtime::Tools,
+    /// Appended to the recipe's command, e.g. options typed into the console.
+    pub extra_args: &'a [String],
     pub sink: EventSink,
 }
 
@@ -78,6 +118,10 @@ impl Supervisor {
             .collect()
     }
 
+    pub fn console(&self, id: &str) -> Option<Arc<console::Console>> {
+        self.map().get(id).and_then(|r| r.console.clone())
+    }
+
     pub fn history(&self, id: &str) -> Vec<String> {
         self.map()
             .get(id)
@@ -103,7 +147,12 @@ impl Supervisor {
             vars.push(("{port}", p.to_string()));
         }
         let run = &req.recipe.run;
-        let argv: Vec<String> = run.argv.iter().map(|a| expand(a, &vars)).collect();
+        let argv: Vec<String> = run
+            .argv
+            .iter()
+            .map(|a| expand(a, &vars))
+            .chain(req.extra_args.iter().cloned())
+            .collect();
         let (program, args) = argv
             .split_first()
             .ok_or_else(|| Problem::internal("empty run command"))?;
@@ -118,16 +167,25 @@ impl Supervisor {
 
         // Watch the app's own output for the address it says it's serving on.
         let seen: Urls = Arc::default();
+        let history = Arc::new(Mutex::new(VecDeque::with_capacity(LOG_HISTORY)));
+        let use_console = req.recipe.kind == AppKind::Terminal;
         let sniff = {
-            let (seen, sink) = (seen.clone(), req.sink.clone());
+            let (seen, sink, hist) = (seen.clone(), req.sink.clone(), history.clone());
             let sink: EventSink = Arc::new(move |e: EngineEvent| {
-                if let EngineEvent::Log { line, .. } = &e
-                    && let Ok(mut seen) = seen.lock()
-                {
-                    for u in local_urls(line) {
-                        if !seen.contains(&u) {
-                            seen.push(u);
+                if let EngineEvent::Log { line, .. } = &e {
+                    if let Ok(mut seen) = seen.lock() {
+                        for u in local_urls(line) {
+                            if !seen.contains(&u) {
+                                seen.push(u);
+                            }
                         }
+                    }
+                    // Piped output is recorded by its pumps; console output only passes here.
+                    if use_console && let Ok(mut h) = hist.lock() {
+                        if h.len() >= LOG_HISTORY {
+                            h.pop_front();
+                        }
+                        h.push_back(line.clone());
                     }
                 }
                 sink(e)
@@ -136,20 +194,32 @@ impl Supervisor {
         };
         let log = ProjectLog::create(&id, &req.project.logs().join("run.log"), sniff);
         log.line(LogStream::Engine, format!("$ {}", argv.join(" ")));
-        let mut child = proc::spawn(proc::Spec {
-            program: &program,
-            args,
-            cwd: &cwd,
-            env: &env,
-        })
-        .map_err(|e| {
+        let launch_failed = |e: std::io::Error| {
             Problem::new(ProblemCode::LaunchFailed)
                 .fix(FixAction::Repair)
                 .detail(format!("{}: {e}", program.display()))
-        })?;
-
-        let history = Arc::new(Mutex::new(VecDeque::with_capacity(LOG_HISTORY)));
-        let pumps = spawn_pumps(&mut child, &log, &history, LOG_HISTORY);
+        };
+        let (mut child, console) = if use_console {
+            let spec = console::PtySpec {
+                program: &program,
+                args,
+                cwd: &cwd,
+                env: &env,
+            };
+            let (console, pty) =
+                console::spawn(spec, &id, log.clone(), req.sink.clone()).map_err(launch_failed)?;
+            (Child::Pty(pty), Some(console))
+        } else {
+            let mut c = proc::spawn(proc::Spec {
+                program: &program,
+                args,
+                cwd: &cwd,
+                env: &env,
+            })
+            .map_err(launch_failed)?;
+            let pumps = spawn_pumps(&mut c, &log, &history, LOG_HISTORY);
+            (Child::Piped(c, pumps), None)
+        };
 
         let stop = CancellationToken::new();
         let (done_tx, done_rx) = watch::channel(None);
@@ -169,6 +239,7 @@ impl Supervisor {
                 done: done_rx.clone(),
                 history: history.clone(),
                 url: url_slot.clone(),
+                console,
             },
         );
         emit(&req.sink, &id, RunState::Starting, None, None);
@@ -178,15 +249,13 @@ impl Supervisor {
         let monitor_id = id.clone();
         tokio::spawn(async move {
             let (code, by_user) = tokio::select! {
-                s = child.wait() => (s.ok().and_then(|s| s.code()), false),
+                code = child.wait() => (code, false),
                 _ = stop.cancelled() => {
-                    let _ = proc::stop_tree(&mut child, STOP_GRACE).await;
+                    child.stop_tree().await;
                     (None, true)
                 }
             };
-            for p in pumps {
-                let _ = tokio::time::timeout(Duration::from_secs(2), p).await;
-            }
+            child.drain().await;
             let state = if by_user || code == Some(0) {
                 RunState::Stopped
             } else {

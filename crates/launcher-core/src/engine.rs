@@ -507,6 +507,16 @@ impl Engine {
     }
 
     pub async fn launch(&self, id: &str, sink: EventSink) -> Result<LaunchInfo> {
+        self.launch_with(id, sink, &[]).await
+    }
+
+    /// Launches with extra command-line arguments (terminal programs that need options).
+    pub async fn launch_with(
+        &self,
+        id: &str,
+        sink: EventSink,
+        extra_args: &[String],
+    ) -> Result<LaunchInfo> {
         let project = self.store.get(id)?;
         let recipe = match (&project.status, &project.recipe) {
             (ProjectStatus::Installed, Some(r)) => r.clone(),
@@ -525,6 +535,7 @@ impl Engine {
                 project_id: id,
                 recipe: &recipe,
                 tools: &tools,
+                extra_args,
                 sink,
             })
             .await
@@ -532,6 +543,28 @@ impl Engine {
 
     pub async fn stop(&self, id: &str) {
         self.supervisor.stop(id).await;
+    }
+
+    /// Keyboard input from the built-in console.
+    pub fn console_write(&self, id: &str, data: &str) -> Result<()> {
+        match self.supervisor.console(id) {
+            Some(c) => c.write(data).map_err(Problem::internal),
+            None => Ok(()),
+        }
+    }
+
+    pub fn console_resize(&self, id: &str, cols: u16, rows: u16) {
+        if let Some(c) = self.supervisor.console(id) {
+            c.resize(cols, rows);
+        }
+    }
+
+    /// What the console has shown so far, for a console window that opens late.
+    pub fn console_scrollback(&self, id: &str) -> String {
+        self.supervisor
+            .console(id)
+            .map(|c| c.scrollback())
+            .unwrap_or_default()
     }
 
     pub async fn stop_all(&self) {

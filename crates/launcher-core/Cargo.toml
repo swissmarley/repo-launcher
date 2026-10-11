@@ -8,6 +8,7 @@ dirs = "7.0.0"
 flate2 = "1.1.10"
 futures-util = "0.3.34"
 hex = "0.4.3"
+portable-pty = "0.9"
 process-wrap = { version = "10.0.1", features = ["tokio1"] }
 reqwest = { version = "0.13.5", features = ["stream", "json"] }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
@@ -32,6 +33,9 @@ tokio = { version = "1.53.2", features = ["rt-multi-thread", "macros", "test-uti
 
 [target."cfg(windows)".dependencies]
 windows = { version = "0.62", features = ["Win32_System_Threading"] }
+
+[target."cfg(unix)".dependencies]
+libc = "0.2.190"
 
 [features]
 # Generates TypeScript bindings for the UI: `cargo test -p launcher-core --features ts`

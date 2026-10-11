@@ -49,6 +49,9 @@ pub enum EngineEvent {
         stream: LogStream,
         line: String,
     },
+    /// Raw terminal output for the built-in console (may contain escape sequences).
+    #[serde(rename_all = "camelCase")]
+    Console { project_id: String, data: String },
     #[serde(rename_all = "camelCase")]
     RunState {
         project_id: String,

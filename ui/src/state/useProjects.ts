@@ -6,8 +6,8 @@ import type { Stage } from '../bindings/Stage'
 import type { StepLabel } from '../bindings/StepLabel'
 import { api, toProblem, type ProjectView } from '../lib/api'
 
-export type Busy = 'install' | 'launch' | 'stop' | 'remove'
-export type Action = 'install' | 'launch'
+export type Busy = 'install' | 'launch' | 'stop' | 'remove' | 'update'
+export type Action = 'install' | 'launch' | 'update' | 'repair'
 
 export interface Live {
   progress?: { stage: Stage; fraction: number; label: StepLabel | null }
@@ -16,6 +16,8 @@ export interface Live {
   busy?: Busy
   /** What to repeat when the user clicks "Try again". */
   lastAction?: Action
+  /** A short, non-error message such as "You have the latest version." */
+  notice?: 'upToDate' | 'updated' | null
 }
 
 interface State {
@@ -149,12 +151,36 @@ export function useProjects() {
     }
   }, [patch])
 
+  /** Update and Repair both reinstall; they share the install progress UI. */
+  const reinstall = useCallback(
+    async (id: string, action: 'update' | 'repair') => {
+      patch(id, { busy: action === 'update' ? 'update' : 'install', problem: null, notice: null, progress: undefined, lastAction: action })
+      try {
+        if (action === 'update') {
+          const updated = await api.updateProject(id)
+          patch(id, { notice: updated ? 'updated' : 'upToDate' })
+        } else {
+          dispatch({ type: 'status', id, status: 'installing' })
+          await api.repairProject(id)
+        }
+      } catch (err) {
+        patch(id, { problem: toProblem(err) })
+      } finally {
+        patch(id, { busy: undefined, progress: undefined })
+        await refresh()
+      }
+    },
+    [patch, refresh],
+  )
+
   const retry = useCallback(
     (id: string) => {
       const action = state.live[id]?.lastAction ?? 'install'
-      return action === 'launch' ? launch(id) : install(id)
+      if (action === 'launch') return launch(id)
+      if (action === 'update' || action === 'repair') return reinstall(id, action)
+      return install(id)
     },
-    [state.live, launch, install],
+    [state.live, launch, install, reinstall],
   )
 
   return {
@@ -167,6 +193,10 @@ export function useProjects() {
     stop,
     remove,
     retry,
+    update: (id: string) => reinstall(id, 'update'),
+    repair: (id: string) => reinstall(id, 'repair'),
+    openConsole: (id: string) => api.openConsole(id).catch((err) => patch(id, { problem: toProblem(err) })),
+    dismissNotice: (id: string) => patch(id, { notice: null }),
     dismissProblem: (id: string) => patch(id, { problem: null }),
   }
 }
