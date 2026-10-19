@@ -90,6 +90,35 @@ jobs:
           AZURE_SIGNING_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
         run: node scripts/release-config.mjs > "$RUNNER_TEMP/release.conf.json"
 
+      - name: Release notes (which file to download; first launch of unsigned builds)
+        shell: bash
+        env:
+          MAC_SIGNED: ${{ secrets.APPLE_CERTIFICATE != '' }}
+          WIN_SIGNED: ${{ vars.AZURE_SIGNING_ACCOUNT != '' }}
+        run: |
+          {
+            echo 'RELEASE_NOTES<<END_OF_NOTES'
+            echo 'Paste a link to a project on GitHub, click **Install**, then **Launch**. No git, Python, Node or terminal needed.'
+            echo
+            echo '| Your computer | Download |'
+            echo '|---|---|'
+            echo '| Mac (Apple silicon or Intel), macOS 10.15 or later | the `.dmg` |'
+            echo '| Windows 10 or 11 (64-bit) | the `-setup.exe` (no administrator rights needed), or the `.msi` for all users |'
+            echo '| Linux | the `.AppImage` (any distribution), the `.deb` (Ubuntu, Debian) or the `.rpm` (Fedora) |'
+            if [ "$MAC_SIGNED" != true ] || [ "$WIN_SIGNED" != true ]; then
+              echo
+              echo '### Opening it the first time'
+              echo 'Some installers are not signed yet, so the system asks once before opening them:'
+              if [ "$MAC_SIGNED" != true ]; then
+                echo '- **macOS:** open the app once; when macOS says it can'"'"'t verify it, open **System Settings → Privacy & Security**, click **Open Anyway** and confirm.'
+              fi
+              if [ "$WIN_SIGNED" != true ]; then
+                echo '- **Windows:** if SmartScreen says "Windows protected your PC", click **More info**, then **Run anyway**.'
+              fi
+            fi
+            echo 'END_OF_NOTES'
+          } >> "$GITHUB_ENV"
+
       - name: Build${{ github.event_name == 'push' && ' and upload to a draft release' || '' }} (signed for macOS)
         if: env.APPLE_SIGNING == 'true'
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
@@ -110,6 +139,7 @@ jobs:
           args: ${{ matrix.args }} --config ${{ runner.temp }}/release.conf.json
           tagName: ${{ github.event_name == 'push' && github.ref_name || '' }}
           releaseName: Repo Launcher ${{ github.ref_name }}
+          releaseBody: ${{ env.RELEASE_NOTES }}
           releaseDraft: true
           uploadWorkflowArtifacts: ${{ github.event_name != 'push' }}
 
@@ -130,5 +160,6 @@ jobs:
           args: ${{ matrix.args }} --config ${{ runner.temp }}/release.conf.json
           tagName: ${{ github.event_name == 'push' && github.ref_name || '' }}
           releaseName: Repo Launcher ${{ github.ref_name }}
+          releaseBody: ${{ env.RELEASE_NOTES }}
           releaseDraft: true
           uploadWorkflowArtifacts: ${{ github.event_name != 'push' }}
