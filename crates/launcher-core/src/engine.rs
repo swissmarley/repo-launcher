@@ -223,6 +223,9 @@ impl Engine {
         match &spec {
             SourceSpec::Local(path) => {
                 project.source = format!("local:{}", path.display());
+                if let Some(existing) = self.store.find_by_source(&project.source)? {
+                    return Ok(existing);
+                }
                 project.name = path
                     .file_name()
                     .map(|n| n.to_string_lossy().into_owned())

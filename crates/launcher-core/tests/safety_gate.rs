@@ -64,6 +64,21 @@ async fn files_created_after_download_dont_change_the_plan() {
 }
 
 #[tokio::test]
+async fn adding_the_same_folder_twice_returns_the_same_project() {
+    let project = tempfile::tempdir().unwrap();
+    std::fs::write(project.path().join("main.py"), "print('hi')\n").unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let engine = engine(home.path());
+    let first = engine.add(&project.path().to_string_lossy()).await.unwrap();
+    let again = engine
+        .add(&format!("{}/", project.path().display()))
+        .await
+        .unwrap();
+    assert_eq!(again.id, first.id);
+    assert_eq!(engine.list().unwrap().len(), 1);
+}
+
+#[tokio::test]
 async fn trusting_an_owner_is_remembered() {
     let home = tempfile::tempdir().unwrap();
     let engine = engine(home.path());

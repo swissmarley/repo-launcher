@@ -18,6 +18,19 @@ ignore = [
     # 2026-10-11: "unmaintained", not a vulnerability. A build-time macro helper of gtk-rs 0.18,
     # which Tauri 2's Linux WebView (webkit2gtk) and tray depend on; it goes when Tauri moves on.
     { id = "RUSTSEC-2024-0370", reason = "build-time only, via Tauri's gtk-rs 0.18 on Linux" },
+    # 2026-10-19: "unmaintained", not vulnerabilities. zbus 5's helper crates, folded into zbus 6;
+    # the Linux keychain (secret-service 5.2, the latest) and Tauri's plugins are still on zbus 5.
+    # They go when those move to zbus 6.
+    { id = "RUSTSEC-2026-0370", reason = "zvariant, via zbus 5 (Linux keychain, Tauri plugins); no zbus 6 release of them yet" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names, via zbus 5 (Linux keychain, Tauri plugins); no zbus 6 release of them yet" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive, via zbus 5 (Linux keychain, Tauri plugins); no zbus 6 release of them yet" },
+    # 2026-10-19: zip 4 extracting attacker-made archives (SUID bits, symlinks). Only
+    # tauri-plugin-updater 2.13.1 (the latest 2.x) uses it, only on Windows, and only after the
+    # update's signature check passed; our Windows updates are .exe/.msi files, which never take
+    # that path. Launcher-core extracts projects' zips with zip 9 (fixed).
+    { id = "RUSTSEC-2026-0367", reason = "zip 4 in tauri-plugin-updater: signed updates only, Windows .exe/.msi skip it" },
+    { id = "RUSTSEC-2026-0368", reason = "zip 4 in tauri-plugin-updater: signed updates only, Windows .exe/.msi skip it" },
+    { id = "RUSTSEC-2026-0369", reason = "zip 4 in tauri-plugin-updater: signed updates only, Windows .exe/.msi skip it" },
 ]
 
 [licenses]

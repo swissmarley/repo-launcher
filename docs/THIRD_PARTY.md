@@ -38,9 +38,17 @@ There are no GPL, AGPL or LGPL-only dependencies. Crates offered under several l
 Regenerate the full list with `cargo deny list -l crate`. SQLite (bundled by `rusqlite`) is in
 the public domain.
 
-One advisory is ignored, with its reason in `deny.toml`: RUSTSEC-2024-0370 (`proc-macro-error`
-is unmaintained), a build-time macro helper inside gtk-rs 0.18, which Tauri 2's Linux WebView
-and tray use. It is not a vulnerability.
+Some advisories are ignored, each with its reason in `deny.toml`:
+
+- RUSTSEC-2024-0370 (`proc-macro-error` is unmaintained), a build-time macro helper inside
+  gtk-rs 0.18, which Tauri 2's Linux WebView and tray use. Not a vulnerability.
+- RUSTSEC-2026-0370, -0371, -0372 (`zvariant`, `zbus_names`, `zvariant_derive` are
+  unmaintained as separate crates, folded into zbus 6). The Linux keychain and Tauri's plugins
+  are still on zbus 5. Not vulnerabilities.
+- RUSTSEC-2026-0367, -0368, -0369 (zip 4 extracting hostile archives). Only the updater plugin
+  uses zip 4, only on Windows and only after an update's signature is verified; our Windows
+  updates are `.exe`/`.msi` files and never go through it. Projects' own zip files are extracted
+  by the engine with zip 9, which has the fixes.
 
 ## JavaScript in the UI
 
