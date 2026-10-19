@@ -132,6 +132,11 @@ pub struct Recipe {
     pub kind: AppKind,
     pub source: RecipeSource,
     pub python: Option<String>,
+    /// Older Pythons to try in turn, newest first, if installing the project's packages fails
+    /// on `python`: pinned old packages often have ready-made builds only for older Pythons.
+    /// Empty when the project names its Python version.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub python_fallbacks: Vec<String>,
     #[serde(default)]
     pub node: Option<NodeSpec>,
     /// Needs the managed Go toolchain.
@@ -169,13 +174,37 @@ fn yes() -> bool {
 impl Recipe {
     /// Stable hash of what will be installed and run, used to decide whether consent must be
     /// asked again. The list of settings the project asks for is left out: a new optional key
-    /// doesn't change what runs on the computer.
+    /// doesn't change what runs on the computer. So are the fallback Pythons: they run the same
+    /// steps with another of our own runtimes.
     pub fn fingerprint(&self) -> String {
         use sha2::{Digest, Sha256};
         let mut copy = self.clone();
         copy.env_vars.clear();
+        copy.python_fallbacks.clear();
         let json = serde_json::to_vec(&copy).unwrap_or_default();
         hex::encode(Sha256::digest(json))
+    }
+
+    /// The same recipe on another Python version: the version in its `uv` steps is replaced.
+    pub fn with_python(&self, version: &str) -> Recipe {
+        let mut r = self.clone();
+        if let Some(old) = &self.python {
+            for step in r
+                .install
+                .iter_mut()
+                .filter(|s| s.argv.first().is_some_and(|a| a == "uv"))
+            {
+                if let StepLabel::SetUpPython { version: v } = &mut step.label {
+                    *v = version.to_owned();
+                }
+                for arg in step.argv.iter_mut().filter(|a| *a == old) {
+                    *arg = version.to_owned();
+                }
+            }
+            r.python = Some(version.to_owned());
+        }
+        r.python_fallbacks.clear();
+        r
     }
 }
 
@@ -267,6 +296,7 @@ fn go_recipe(info: &crate::detect::go::GoInfo) -> Result<Recipe, Problem> {
         kind: AppKind::Terminal,
         source: RecipeSource::Heuristic,
         python: None,
+        python_fallbacks: Vec::new(),
         node: None,
         go: true,
         install: vec![build],
@@ -292,6 +322,7 @@ fn docker_compose(report: &DetectionReport) -> Option<Recipe> {
         kind: AppKind::Terminal,
         source: RecipeSource::Heuristic,
         python: None,
+        python_fallbacks: Vec::new(),
         node: None,
         go: false,
         install: Vec::new(),

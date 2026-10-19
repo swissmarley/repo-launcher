@@ -11,6 +11,10 @@ pub fn recipe(py: &PythonInfo) -> Result<Recipe, Problem> {
         .first()
         .ok_or_else(|| Problem::new(ProblemCode::NoEntryPoint))?;
     let version = pyversion::choose(py.requires_python.as_deref(), py.pinned_version.as_deref());
+    let python_fallbacks = match py.pinned_version {
+        Some(_) => Vec::new(),
+        None => pyversion::older(&version, py.requires_python.as_deref()),
+    };
 
     let mut install = setup_steps(&version);
 
@@ -81,6 +85,7 @@ pub fn recipe(py: &PythonInfo) -> Result<Recipe, Problem> {
         kind,
         source: RecipeSource::Heuristic,
         python: Some(version),
+        python_fallbacks,
         node: None,
         go: false,
         env_vars: Vec::new(),
@@ -249,6 +254,34 @@ mod tests {
         assert_eq!(argvs[0], "uv python install --no-bin 3.12");
         assert_eq!(argvs[2], "uv pip install -r requirements.txt");
         assert_eq!(argvs.len(), 3, "nothing missing to add: {argvs:?}");
+    }
+
+    #[test]
+    fn older_pythons_to_fall_back_to_unless_the_project_pins_one() {
+        let r = recipe(&info(EntryKind::Script, &[])).unwrap();
+        assert_eq!(r.python_fallbacks, ["3.11", "3.10", "3.9"]);
+        let older = r.with_python("3.10");
+        let argvs: Vec<String> = older.install.iter().map(|s| s.argv.join(" ")).collect();
+        assert_eq!(argvs[0], "uv python install --no-bin 3.10");
+        assert!(argvs[1].contains("--python 3.10"), "{argvs:?}");
+        assert_eq!(
+            older.install[0].label,
+            StepLabel::SetUpPython {
+                version: "3.10".into()
+            }
+        );
+        assert_eq!(older.python.as_deref(), Some("3.10"));
+        assert!(older.python_fallbacks.is_empty());
+        // Not part of what the user agreed to: the same steps on another of our Pythons.
+        assert_eq!(r.fingerprint(), {
+            let mut same = r.clone();
+            same.python_fallbacks.clear();
+            same.fingerprint()
+        });
+
+        let mut pinned = info(EntryKind::Script, &[]);
+        pinned.pinned_version = Some("3.12".into());
+        assert!(recipe(&pinned).unwrap().python_fallbacks.is_empty());
     }
 
     #[test]

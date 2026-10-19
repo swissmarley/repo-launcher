@@ -46,6 +46,26 @@ async fn install(engine: &Engine, name: &str) -> String {
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "downloads runtimes and packages"]
+async fn old_pinned_packages_install_on_an_older_python() {
+    // numpy 1.21 can't be built on Python 3.12 (no distutils) and has no ready-made builds for
+    // 3.11 or 3.12; 3.10 has them.
+    let engine = engine();
+    let id = install(&engine, "py-old-pins").await;
+    engine.launch(&id, null_sink()).await.unwrap();
+    for _ in 0..100 {
+        if !engine.is_running(&id) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let out = engine.run_history(&id).join("\n");
+    assert!(out.contains("numpy 1.21.6 on Python 3.1"), "{out}");
+    assert!(!out.contains("on Python 3.12"), "{out}");
+    engine.uninstall(&id).await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "downloads runtimes and packages"]
 async fn web_project_starts_responds_and_stops() {
     let engine = engine();
     let id = install(&engine, "py-flask").await;
