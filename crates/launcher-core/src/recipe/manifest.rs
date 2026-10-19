@@ -191,6 +191,7 @@ pub fn parse(text: &str, report: &DetectionReport) -> Result<(Recipe, Display), 
         kind: m.kind,
         source: RecipeSource::Manifest,
         python,
+        python_fallbacks: Vec::new(),
         node,
         go: needs_go,
         install,
@@ -403,6 +404,7 @@ mod tests {
             node: None,
             go: None,
             compose_file: None,
+            static_index: false,
             env_hints: vec![],
         }
     }

@@ -223,6 +223,9 @@ impl Engine {
         match &spec {
             SourceSpec::Local(path) => {
                 project.source = format!("local:{}", path.display());
+                if let Some(existing) = self.store.find_by_source(&project.source)? {
+                    return Ok(existing);
+                }
                 project.name = path
                     .file_name()
                     .map(|n| n.to_string_lossy().into_owned())
@@ -270,6 +273,10 @@ impl Engine {
                     project.source = format!("{}@{}", project.source, resolved.name);
                     if let Some(sub) = &resolved.subdir {
                         project.source = format!("{}/{sub}", project.source);
+                        // Named after its folder, so two demos from one repository differ.
+                        if let Some(folder) = sub.rsplit('/').find(|s| !s.is_empty()) {
+                            project.name = format!("{folder} ({})", project.name);
+                        }
                     }
                     if let Some(existing) = self.store.find_by_source(&project.source)? {
                         return Ok(existing);

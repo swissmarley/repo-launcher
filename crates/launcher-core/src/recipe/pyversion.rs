@@ -23,6 +23,20 @@ pub fn choose(requires: Option<&str>, pinned: Option<&str>) -> String {
         .unwrap_or_else(|| fmt(DEFAULT))
 }
 
+/// The candidates older than `chosen` that `requires` allows, newest first: what to try when
+/// the project's packages won't install on `chosen`.
+pub fn older(chosen: &str, requires: Option<&str>) -> Vec<String> {
+    let Some(chosen) = parse_minor(chosen) else {
+        return Vec::new();
+    };
+    CANDIDATES
+        .iter()
+        .copied()
+        .filter(|v| *v < chosen && requires.is_none_or(|spec| satisfies(spec, *v)))
+        .map(fmt)
+        .collect()
+}
+
 fn fmt((a, b): (u32, u32)) -> String {
     format!("{a}.{b}")
 }
@@ -127,5 +141,13 @@ mod tests {
         assert_eq!(choose(Some(">=3.9, !=3.12.*"), None), "3.13");
         assert_eq!(choose(Some(">=3.12"), Some("3.11.9")), "3.11");
         assert_eq!(choose(Some("garbage"), None), "3.12");
+    }
+
+    #[test]
+    fn older_versions_to_fall_back_to() {
+        assert_eq!(older("3.12", None), ["3.11", "3.10", "3.9"]);
+        assert_eq!(older("3.12", Some(">=3.10")), ["3.11", "3.10"]);
+        assert!(older("3.12", Some(">=3.12")).is_empty());
+        assert!(older("3.9", None).is_empty());
     }
 }

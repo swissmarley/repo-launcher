@@ -86,7 +86,9 @@ can't update themselves.
 ### 2. macOS: Developer ID signing and notarization
 
 Without this, macOS blocks the downloaded app until the user allows it in System Settings →
-Privacy & Security.
+Privacy & Security (**Open Anyway**). Until then, release builds are signed ad hoc
+(`scripts/release-config.mjs`): on Apple silicon an app with no signature at all is reported as
+"damaged" and can't be opened that way. The release notes tell users how to open unsigned builds.
 
 Needed: an **Apple Developer Program** membership (paid, yearly) for the account that will sign.
 

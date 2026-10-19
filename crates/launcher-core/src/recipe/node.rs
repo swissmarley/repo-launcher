@@ -63,6 +63,7 @@ pub fn recipe(info: &NodeInfo) -> Result<Recipe, Problem> {
         kind,
         source: RecipeSource::Heuristic,
         python: None,
+        python_fallbacks: Vec::new(),
         node: Some(node),
         go: false,
         install,

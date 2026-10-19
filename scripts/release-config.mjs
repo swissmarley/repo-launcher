@@ -8,6 +8,8 @@
 //   AZURE_SIGNING_ENDPOINT   e.g. https://weu.codesigning.azure.net         ┐
 //   AZURE_SIGNING_ACCOUNT    Artifact Signing account name                  ├ Windows signing
 //   AZURE_SIGNING_PROFILE    certificate profile name                       ┘
+//   APPLE_SIGNING            "true" when a Developer ID certificate is set; otherwise macOS
+//                            builds are signed ad hoc
 //
 // Without them the release is built unsigned and can't update itself.
 
@@ -27,6 +29,14 @@ if (pubkey) {
   }
 }
 
+// Without a Developer ID certificate (the workflow's APPLE_SIGNING), sign ad hoc: on Apple
+// silicon a downloaded app with no signature at all is reported as "damaged" and can't be
+// opened, while an ad-hoc signed one gets the usual "Open Anyway" in Privacy & Security.
+const appleSigned = env('APPLE_SIGNING') === 'true'
+if (!appleSigned) {
+  config.bundle.macOS = { signingIdentity: '-' }
+}
+
 const [endpoint, account, profile] = ['AZURE_SIGNING_ENDPOINT', 'AZURE_SIGNING_ACCOUNT', 'AZURE_SIGNING_PROFILE'].map(env)
 if (endpoint && account && profile) {
   // trusted-signing-cli reads AZURE_CLIENT_ID, AZURE_CLIENT_SECRET and AZURE_TENANT_ID.
@@ -41,5 +51,6 @@ if (endpoint && account && profile) {
 process.stdout.write(JSON.stringify(config, null, 2) + '\n')
 process.stderr.write(
   `release config: updates ${pubkey ? 'signed' : 'off (no UPDATER_PUBKEY)'}, ` +
-    `Windows ${config.bundle.windows ? 'signed' : 'unsigned (no Azure signing variables)'}\n`,
+    `Windows ${config.bundle.windows ? 'signed' : 'unsigned (no Azure signing variables)'}, ` +
+    `macOS ${appleSigned ? 'Developer ID' : 'ad hoc (no Apple certificate)'}\n`,
 )

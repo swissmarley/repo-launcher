@@ -166,8 +166,39 @@ fn fingerprint(step: &Step, source_id: &str) -> String {
     hex::encode(h.finalize())
 }
 
-/// Install progress spans 0.30..0.95; downloading the source and runtimes covers the rest.
+/// Runs the recipe's steps. If the project's packages won't install (old pinned packages often
+/// have ready-made builds only for older Pythons), tries again on each fallback Python in a
+/// fresh environment. The first failure is the one reported.
 pub async fn run_steps(ctx: &Context<'_>, recipe: &Recipe) -> Result<()> {
+    let first = match run_recipe_steps(ctx, recipe).await {
+        Err(p)
+            if matches!(
+                p.code,
+                ProblemCode::InstallStepFailed | ProblemCode::NeedsCompiler
+            ) =>
+        {
+            p
+        }
+        other => return other,
+    };
+    for version in &recipe.python_fallbacks {
+        ctx.log.line(
+            LogStream::Engine,
+            format!("that didn't work; trying again with Python {version}"),
+        );
+        // The environment belongs to the Python that just failed.
+        let _ = tokio::fs::remove_dir_all(ctx.project.env()).await;
+        match run_recipe_steps(ctx, &recipe.with_python(version)).await {
+            Ok(()) => return Ok(()),
+            Err(p) if p.code == ProblemCode::Cancelled => return Err(p),
+            Err(_) => {}
+        }
+    }
+    Err(first)
+}
+
+/// Install progress spans 0.30..0.95; downloading the source and runtimes covers the rest.
+async fn run_recipe_steps(ctx: &Context<'_>, recipe: &Recipe) -> Result<()> {
     let steps: Vec<&Step> = recipe.install.iter().filter(|s| s.applies_here()).collect();
     let n = steps.len().max(1) as f32;
     let mut record = StepRecord::load(ctx.project);

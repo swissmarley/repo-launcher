@@ -289,3 +289,25 @@ The tray needs `libayatana-appindicator3`; the tray library loads it when the ic
 stops the whole app if it's missing, so the deb and rpm declare it. The AppImage bundles it. Desktops that don't show tray icons (GNOME
 without the extension) still need the library, but nothing in the app depends on the icon being
 visible (D-036).
+
+### D-046 · Older Pythons when a project's pinned packages won't install — 2026-10-19
+Many projects pin package versions from before Python 3.12 (`numpy==1.21`, `Pillow==8.4`): those
+have ready-made builds only for older Pythons, and on 3.12 they need a compiler or can't be built
+at all. When a project doesn't name its Python version (D-016) and installing its packages fails
+for such a reason (not when offline or cancelled), the install is tried again on 3.11, 3.10 and
+3.9 in turn (only those its `requires-python` allows), each in a fresh environment; the first
+failure is the one shown if none works. The fallbacks aren't part of the consent fingerprint
+(D-028): they run the same steps on another of our own Pythons.
+
+### D-047 · Python scripts that open a window are desktop apps — 2026-10-19
+An entry point that imports tkinter, pygame, Qt, wx, kivy or similar is started like other
+desktop apps (no console window), not in the built-in console (D-023). A root `main.py`/`app.py`,
+or the file the README says to run, counts as an entry point when it runs code at the top level
+even without an `if __name__ == "__main__"` guard: many small projects are written that way.
+
+### D-048 · Plain websites are served as they are — 2026-10-19
+A project with an `index.html` at its root and no other way to start (no app, no dev server, no
+Compose file) is a website: portfolios, landing pages, browser games. It is served from its own
+folder by the managed Python's built-in web server (`python -m http.server`, on 127.0.0.1) and
+opens in the browser. Not when a server-side language we don't run is present (Ruby, PHP, …):
+there `index.html` is a template (Jekyll), and the project is explained as unsupported instead.

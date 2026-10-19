@@ -585,6 +585,7 @@ mod tests {
             kind: AppKind::Web,
             source: RecipeSource::Heuristic,
             python: Some("3.12".into()),
+            python_fallbacks: Vec::new(),
             node: None,
             go: false,
             install: install
