@@ -404,6 +404,7 @@ mod tests {
             node: None,
             go: None,
             compose_file: None,
+            static_index: false,
             env_hints: vec![],
         }
     }

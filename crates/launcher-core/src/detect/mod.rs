@@ -64,6 +64,8 @@ pub struct DetectionReport {
     pub go: Option<go::GoInfo>,
     /// A Docker Compose file at the root, if any.
     pub compose_file: Option<String>,
+    /// An `index.html` at the root: a website, if nothing else starts the project.
+    pub static_index: bool,
     /// Settings (API keys etc.) the code reads from its environment.
     #[serde(default)]
     pub env_hints: Vec<envvars::EnvHint>,
@@ -125,6 +127,7 @@ pub fn detect(tree: &FileTree) -> DetectionReport {
         .into_iter()
         .find(|f| has(f))
         .map(str::to_owned),
+        static_index: has("index.html"),
         env_hints: envvars::scan(tree),
     }
 }
@@ -152,5 +155,45 @@ mod tests {
         let problem = crate::recipe::resolve(&tree, &report).unwrap_err();
         assert_eq!(problem.code, ProblemCode::UnsupportedProject);
         assert_eq!(problem.params["ecosystem"], ".NET");
+    }
+
+    fn tree(files: &[(&str, &str)]) -> (tempfile::TempDir, FileTree) {
+        let dir = tempfile::tempdir().unwrap();
+        for (file, body) in files {
+            let p = dir.path().join(file);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, body).unwrap();
+        }
+        let t = FileTree::scan(dir.path()).unwrap();
+        (dir, t)
+    }
+
+    #[test]
+    fn a_plain_website_is_served_as_it_is() {
+        let (_d, t) = tree(&[
+            ("index.html", "<h1>Hi</h1>"),
+            ("styles/style.css", "h1 {}"),
+            // Formatting tools only: nothing to start.
+            ("package.json", r#"{"devDependencies": {"prettier": "3"}}"#),
+        ]);
+        let (recipe, _) = crate::recipe::resolve(&t, &detect(&t)).unwrap();
+        assert_eq!(recipe.kind, crate::recipe::AppKind::Web);
+        assert_eq!(recipe.run.argv[..3], ["python", "-m", "http.server"]);
+
+        // A Jekyll site's index.html is a template, not the page.
+        let (_d, t) = tree(&[("index.html", "{{ content }}"), ("Gemfile", "gem 'jekyll'")]);
+        let problem = crate::recipe::resolve(&t, &detect(&t)).unwrap_err();
+        assert_eq!(problem.code, ProblemCode::UnsupportedProject);
+
+        // A project that starts some other way keeps doing so.
+        let (_d, t) = tree(&[
+            ("index.html", "<div id=app>"),
+            (
+                "package.json",
+                r#"{"scripts": {"dev": "vite"}, "devDependencies": {"vite": "7"}}"#,
+            ),
+        ]);
+        let (recipe, _) = crate::recipe::resolve(&t, &detect(&t)).unwrap();
+        assert_eq!(recipe.run.argv[0], "vite");
     }
 }

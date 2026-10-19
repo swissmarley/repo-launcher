@@ -304,3 +304,10 @@ An entry point that imports tkinter, pygame, Qt, wx, kivy or similar is started 
 desktop apps (no console window), not in the built-in console (D-023). A root `main.py`/`app.py`,
 or the file the README says to run, counts as an entry point when it runs code at the top level
 even without an `if __name__ == "__main__"` guard: many small projects are written that way.
+
+### D-048 · Plain websites are served as they are — 2026-10-19
+A project with an `index.html` at its root and no other way to start (no app, no dev server, no
+Compose file) is a website: portfolios, landing pages, browser games. It is served from its own
+folder by the managed Python's built-in web server (`python -m http.server`, on 127.0.0.1) and
+opens in the browser. Not when a server-side language we don't run is present (Ruby, PHP, …):
+there `index.html` is a template (Jekyll), and the project is explained as unsupported instead.

@@ -268,8 +268,48 @@ pub fn from_detection(report: &DetectionReport) -> Result<Recipe, Problem> {
     match best {
         Some(Ok(r)) => Ok(r),
         Some(Err(p)) if p.code != ProblemCode::NoEntryPoint => Err(p),
-        _ => docker_compose(report).ok_or_else(|| unsupported(report)),
+        _ => docker_compose(report)
+            .or_else(|| static_site(report))
+            .ok_or_else(|| unsupported(report)),
     }
+}
+
+/// A plain website (an `index.html` and nothing that starts or builds it), served as it is by
+/// the managed Python's built-in web server. Not when a server-side language we don't run is
+/// present: then `index.html` is a template (Jekyll, PHP), not the page.
+fn static_site(report: &DetectionReport) -> Option<Recipe> {
+    let plain = report
+        .ecosystems
+        .iter()
+        .all(|e| matches!(e, Ecosystem::Python | Ecosystem::Node | Ecosystem::Docker));
+    if !report.static_index || !plain {
+        return None;
+    }
+    let version = pyversion::choose(None, None);
+    Some(Recipe {
+        kind: AppKind::Web,
+        source: RecipeSource::Heuristic,
+        python: Some(version.clone()),
+        python_fallbacks: Vec::new(),
+        node: None,
+        go: false,
+        install: python::setup_steps(&version),
+        run: RunSpec {
+            argv: ["python", "-m", "http.server", "{port}", "--bind", "{host}"]
+                .map(String::from)
+                .to_vec(),
+            cwd: ".".into(),
+            env: BTreeMap::new(),
+        },
+        web: Some(WebSpec {
+            preferred_port: 8000,
+            path: "/".into(),
+            ready_timeout_secs: 60,
+            discover: false,
+        }),
+        env_vars: Vec::new(),
+        system_tools: Vec::new(),
+    })
 }
 
 /// Builds a Go module's main package with the managed toolchain into the project's private

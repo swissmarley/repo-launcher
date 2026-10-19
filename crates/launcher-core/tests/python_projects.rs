@@ -66,6 +66,21 @@ async fn old_pinned_packages_install_on_an_older_python() {
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "downloads runtimes and packages"]
+async fn plain_website_is_served() {
+    let engine = engine();
+    let id = install(&engine, "static-site").await;
+    let info = engine.launch(&id, null_sink()).await.unwrap();
+    let url = info.url.expect("a website has an address");
+    let body = reqwest::get(&url).await.unwrap().text().await.unwrap();
+    assert!(body.contains("Hello from static-site"), "{body}");
+    let css = reqwest::get(format!("{url}style.css")).await.unwrap();
+    assert!(css.status().is_success());
+    engine.stop(&id).await;
+    engine.uninstall(&id).await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "downloads runtimes and packages"]
 async fn web_project_starts_responds_and_stops() {
     let engine = engine();
     let id = install(&engine, "py-flask").await;
