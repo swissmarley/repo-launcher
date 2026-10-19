@@ -273,6 +273,10 @@ impl Engine {
                     project.source = format!("{}@{}", project.source, resolved.name);
                     if let Some(sub) = &resolved.subdir {
                         project.source = format!("{}/{sub}", project.source);
+                        // Named after its folder, so two demos from one repository differ.
+                        if let Some(folder) = sub.rsplit('/').find(|s| !s.is_empty()) {
+                            project.name = format!("{folder} ({})", project.name);
+                        }
                     }
                     if let Some(existing) = self.store.find_by_source(&project.source)? {
                         return Ok(existing);

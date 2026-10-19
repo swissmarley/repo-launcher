@@ -77,20 +77,21 @@ export function ProjectCard({
     >
       <header className="flex items-start gap-4">
         <ProjectIcon name={p.name} avatarUrl={p.avatarUrl} projectId={p.id} version={`${p.status}:${p.updatedAt}`} />
+        {/* The status sits under the name, not beside it, so a card's width goes to the name. */}
         <div className="min-w-0 flex-1">
-          <h3 id={`name-${p.id}`} translate="no" className="truncate text-base font-semibold">
+          <h3 id={`name-${p.id}`} translate="no" title={p.name} className="line-clamp-2 text-base font-semibold wrap-anywhere">
             {p.name}
           </h3>
           {meta && (
-            <p translate="no" className="truncate text-sm text-muted">
+            <p translate="no" title={meta} className="truncate text-sm text-muted">
               {meta}
             </p>
           )}
+          <span className="mt-1 flex items-center gap-2 text-sm text-muted">
+            <span aria-hidden className={`size-2.5 shrink-0 rounded-full ${dotColor[status]}`} />
+            {t(`status.${status}`)}
+          </span>
         </div>
-        <span className="flex shrink-0 items-center gap-2 text-sm text-muted">
-          <span aria-hidden className={`size-2.5 rounded-full ${dotColor[status]}`} />
-          {t(`status.${status}`)}
-        </span>
       </header>
 
       {p.description && (

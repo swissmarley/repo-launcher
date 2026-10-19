@@ -191,6 +191,24 @@ async fn mock_github(server: &MockServer) {
     // Anything else (e.g. a repo that doesn't exist): 404.
 }
 
+#[tokio::test]
+async fn a_subfolder_project_is_named_after_its_folder() {
+    let server = MockServer::start().await;
+    mock_github(&server).await;
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine_with(dir.path(), Some(&server), Arc::new(MemoryStore::new()));
+
+    let whole = engine.add("https://github.com/acme/open").await.unwrap();
+    assert_eq!(whole.name, "open");
+    let demo = engine
+        .add("https://github.com/acme/open/tree/main/demos/hello_world")
+        .await
+        .unwrap();
+    assert_eq!(demo.name, "hello_world (open)");
+    assert_eq!(demo.subdir.as_deref(), Some("demos/hello_world"));
+    assert_ne!(demo.id, whole.id);
+}
+
 fn carries_token(req: &Request) -> bool {
     req.headers.contains_key("authorization")
 }

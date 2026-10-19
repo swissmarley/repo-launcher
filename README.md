@@ -89,3 +89,9 @@ cargo test -p launcher-core --features ts --lib
 | `app` | The Tauri desktop shell: thin command adapters, no business logic. |
 | `ui` | The React interface. |
 | `fixtures/synthetic` | Tiny projects used by integration tests. |
+
+## License
+
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
+[MIT license](LICENSE-MIT) at your option. Third-party components and their licenses are listed
+in [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md).
