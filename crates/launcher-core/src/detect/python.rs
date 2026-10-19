@@ -36,6 +36,8 @@ pub enum EntryKind {
     },
     Django,
     Script,
+    /// A script that opens its own window (tkinter, pygame, Qt…).
+    Gui,
     Module {
         module: String,
     },
@@ -73,6 +75,21 @@ const PREFERRED_NAMES: &[&str] = &[
     "demo.py",
     "run.py",
 ];
+/// Modules whose import means the script opens a window rather than talking in a terminal.
+const GUI_MODULES: &[&str] = &[
+    "tkinter",
+    "customtkinter",
+    "ttkbootstrap",
+    "pygame",
+    "PyQt5",
+    "PyQt6",
+    "PySide2",
+    "PySide6",
+    "wx",
+    "kivy",
+    "pyglet",
+    "arcade",
+];
 const IGNORED_DIRS: &[&str] = &[
     "tests",
     "test",
@@ -86,7 +103,7 @@ const IGNORED_DIRS: &[&str] = &[
 pub fn detect(tree: &FileTree) -> Option<PythonInfo> {
     let has_marker = MARKERS.iter().any(|m| tree.has(m));
     let root_py = tree.files().any(|f| !f.contains('/') && f.ends_with(".py"));
-    let notebooks = tree.files().any(|f| f.ends_with(".ipynb"));
+    let notebooks = has_notebooks(tree);
     if !has_marker && !root_py && !notebooks {
         return None;
     }
@@ -133,10 +150,26 @@ pub fn detect(tree: &FileTree) -> Option<PythonInfo> {
             info.frameworks.push(fw);
         }
     }
-    if tree.files().any(|f| f.ends_with(".ipynb")) {
+    if notebooks {
         info.frameworks.push(Framework::Jupyter);
     }
     Some(info)
+}
+
+/// Notebooks meant to be opened: not the test data of a library that reads notebooks.
+fn has_notebooks(tree: &FileTree) -> bool {
+    const TEST_DIRS: &[&str] = &[
+        "test",
+        "tests",
+        "testing",
+        "test_files",
+        "test_data",
+        "testdata",
+        "fixtures",
+        "__tests__",
+    ];
+    tree.files()
+        .any(|f| f.ends_with(".ipynb") && !f.split('/').any(|part| TEST_DIRS.contains(&part)))
 }
 
 fn framework_of(kind: &EntryKind) -> Option<Framework> {
@@ -307,8 +340,16 @@ fn readme_hints(tree: &FileTree) -> Vec<String> {
     for line in readme.lines() {
         let words: Vec<&str> = line.split_whitespace().collect();
         for w in words.windows(2) {
-            let cmd_ok = matches!(w[0], "run" | "python" | "python3" | "py");
-            let file = w[1].trim_matches(|c| c == '`' || c == '"' || c == '\'');
+            // Also inline code in a sentence: "Start it with `python app.py`."
+            let quote = |c: char| matches!(c, '`' | '"' | '\'' | '$');
+            let cmd_ok = matches!(
+                w[0].trim_start_matches(quote),
+                "run" | "python" | "python3" | "py"
+            );
+            let file = w[1]
+                .trim_matches(quote)
+                .trim_end_matches(['.', ',', ';', ':', ')'])
+                .trim_end_matches(quote);
             if cmd_ok && file.ends_with(".py") {
                 hints.push(file.trim_start_matches("./").to_owned());
             }
@@ -351,10 +392,12 @@ fn find_entries(tree: &FileTree, info: &PythonInfo, hints: &[String]) -> Vec<Ent
         }
         let Some(src) = tree.read(f) else { continue };
         let mut score = if depth == 0 { 10 } else { 0 };
-        if PREFERRED_NAMES.contains(&name) {
+        let preferred = PREFERRED_NAMES.contains(&name);
+        let hinted = hints.iter().any(|h| h == f);
+        if preferred {
             score += 20;
         }
-        if hints.iter().any(|h| h == f) {
+        if hinted {
             score += 30;
         }
 
@@ -378,14 +421,22 @@ fn find_entries(tree: &FileTree, info: &PythonInfo, hints: &[String]) -> Vec<Ent
             Some(EntryKind::FastApi {
                 app: format!("{}:{var}", module_path(f)),
             })
-        } else if depth == 0 && src.contains("__name__") && src.contains("__main__") {
-            Some(EntryKind::Script)
+        } else if depth == 0
+            && ((src.contains("__name__") && src.contains("__main__"))
+                // Many scripts just run at the top level, without a `__main__` guard.
+                || ((preferred || hinted) && runs_at_top_level(&src)))
+        {
+            Some(if imports_any(&src, GUI_MODULES) {
+                EntryKind::Gui
+            } else {
+                EntryKind::Script
+            })
         } else {
             None
         };
         if let Some(kind) = kind {
             let bonus = match kind {
-                EntryKind::Script => 0,
+                EntryKind::Script | EntryKind::Gui => 0,
                 _ => 20,
             };
             out.push(Entry {
@@ -395,7 +446,7 @@ fn find_entries(tree: &FileTree, info: &PythonInfo, hints: &[String]) -> Vec<Ent
             });
         }
     }
-    if out.is_empty() && info.scripts.is_empty() && tree.files().any(|f| f.ends_with(".ipynb")) {
+    if out.is_empty() && info.scripts.is_empty() && has_notebooks(tree) {
         out.push(Entry {
             file: String::new(),
             kind: EntryKind::Notebooks,
@@ -412,7 +463,40 @@ fn find_entries(tree: &FileTree, info: &PythonInfo, hints: &[String]) -> Vec<Ent
     out
 }
 
-/// Finds `name = Flask(` style assignments and returns `name`.
+/// Whether the module does something when run: a call at the top level, such as `main()` or
+/// `root.mainloop()`, not only definitions and imports.
+fn runs_at_top_level(src: &str) -> bool {
+    const NOT_CALLS: &[&str] = &[
+        "def ", "class ", "import ", "from ", "if ", "elif ", "else", "for ", "while ", "with ",
+        "try", "except", "finally", "return", "async ", "@", "#",
+    ];
+    src.lines().any(|line| {
+        line.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+            && !NOT_CALLS.iter().any(|k| line.starts_with(k))
+            && line
+                .split_once('(')
+                .is_some_and(|(head, _)| !head.contains('='))
+    })
+}
+
+/// Whether the source imports any of `modules` (`import x`, `import x.y`, `from x import …`).
+fn imports_any(src: &str, modules: &[&str]) -> bool {
+    src.lines().any(|line| {
+        let line = line.trim_start();
+        let names = if let Some(rest) = line.strip_prefix("import ") {
+            rest
+        } else if let Some(rest) = line.strip_prefix("from ") {
+            rest.split_whitespace().next().unwrap_or("")
+        } else {
+            return false;
+        };
+        names.split(',').any(|n| {
+            let top = n.trim().split([' ', '.']).next().unwrap_or("");
+            modules.contains(&top)
+        })
+    })
+}
+
 /// Finds `name = Flask(` style assignments. Returns the name and whether it was inside a
 /// function (an app factory such as `create_app()`), in which case the module alone is the
 /// right target: Flask looks for the factory itself.
@@ -488,6 +572,50 @@ mod tests {
     }
 
     #[test]
+    fn scripts_without_a_main_guard_and_windowed_apps() {
+        // A tkinter app that just runs: no `if __name__ == "__main__"`.
+        let (_d, t) = tree(&[
+            (
+                "app.py",
+                "import tkinter as tk\nroot = tk.Tk()\nroot.title('x')\nroot.mainloop()\n",
+            ),
+            ("requirements.txt", "cryptography\n"),
+        ]);
+        let info = detect(&t).unwrap();
+        assert_eq!(info.entries[0].kind, EntryKind::Gui);
+        assert_eq!(info.entries[0].file, "app.py");
+
+        // A plain script named like an entry point, and one the README says to run.
+        let (_d, t) = tree(&[
+            ("main.py", "def main():\n    print('hi')\n\nmain()\n"),
+            ("tool.py", "import sys\nprint(sys.argv)\n"),
+            ("README.md", "Run it with `python tool.py`.\n"),
+        ]);
+        let info = detect(&t).unwrap();
+        let files: Vec<_> = info.entries.iter().map(|e| e.file.as_str()).collect();
+        assert_eq!(files, ["tool.py", "main.py"]);
+        assert!(info.entries.iter().all(|e| e.kind == EntryKind::Script));
+
+        // Helpers that only define things, or other unguarded files, aren't entry points.
+        let (_d, t) = tree(&[
+            (
+                "main.py",
+                "import os\nX = os.getcwd()\n\ndef run():\n    pass\n",
+            ),
+            ("helpers.py", "print('side effect')\n"),
+            ("requirements.txt", "requests\n"),
+        ]);
+        assert!(detect(&t).unwrap().entries.is_empty());
+
+        // A guarded pygame game is a windowed app too.
+        let (_d, t) = tree(&[(
+            "game.py",
+            "import pygame, sys\n\nif __name__ == '__main__':\n    pygame.init()\n",
+        )]);
+        assert_eq!(detect(&t).unwrap().entries[0].kind, EntryKind::Gui);
+    }
+
+    #[test]
     fn gradio_flask_fastapi() {
         let (_d, t) = tree(&[
             (
@@ -551,6 +679,22 @@ hello = "hello.cli:main"
             vec!["streamlit>=1.30", "httpx"]
         );
         assert_eq!(info.requires_python.as_deref(), Some(">=3.11"));
+    }
+
+    #[test]
+    fn test_data_notebooks_dont_make_a_notebook_project() {
+        // A library that converts notebooks keeps one in its tests (microsoft/markitdown).
+        let (_d, t) = tree(&[
+            ("README.md", "# A converter\n"),
+            (
+                "packages/conv/tests/test_files/sample.ipynb",
+                r#"{"cells": []}"#,
+            ),
+        ]);
+        assert!(detect(&t).is_none());
+
+        let (_d, t) = tree(&[("notebooks/01-intro.ipynb", r#"{"cells": []}"#)]);
+        assert_eq!(detect(&t).unwrap().entries[0].kind, EntryKind::Notebooks);
     }
 
     #[test]

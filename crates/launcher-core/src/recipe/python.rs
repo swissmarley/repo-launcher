@@ -162,6 +162,7 @@ fn run_for(
             )
         }
         EntryKind::Script => (AppKind::Terminal, run(&["python", file]), None),
+        EntryKind::Gui => (AppKind::Gui, run(&["python", file]), None),
         EntryKind::Module { module } => (AppKind::Terminal, run(&["python", "-m", module]), None),
         EntryKind::ConsoleScript { name } => (AppKind::Terminal, run(&[name]), None),
         EntryKind::Notebooks => {

@@ -315,7 +315,7 @@ fn unsupported(report: &DetectionReport) -> Problem {
     ];
     match report.ecosystems.iter().find(|e| !supported.contains(e)) {
         Some(e) => {
-            Problem::new(ProblemCode::UnsupportedProject).param("ecosystem", format!("{e:?}"))
+            Problem::new(ProblemCode::UnsupportedProject).param("ecosystem", e.display_name())
         }
         None => Problem::new(ProblemCode::NoEntryPoint),
     }
